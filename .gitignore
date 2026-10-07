@@ -32,6 +32,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# claude code: personal permissions (the project skill in .claude/skills is shared)
+.claude/settings.local.json
+
 # os / editor
 .DS_Store
 Thumbs.db
