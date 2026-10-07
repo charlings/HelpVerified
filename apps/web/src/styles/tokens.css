@@ -1,0 +1,135 @@
+/*
+ * HelpVerified design tokens — the ONLY file where raw colour values may appear.
+ * Brand colours sampled from HelpVerified_Gradient_Logo.png. Contrast ratios are against white.
+ */
+@theme static {
+  --color-*: initial;
+
+  /* Brand */
+  --color-navy-900: #0a2249; /* "Help" wordmark — headings, dark sections. 15.7:1 */
+  --color-navy-800: #142e5c;
+  --color-blue-700: #0047b8; /* hover / pressed. 8.1:1 */
+  --color-blue-600: #0158e1; /* PRIMARY: buttons, links, focus. 6.03:1 */
+  --color-blue-500: #0779fb; /* large text >= 24px and icons only. 4.09:1 */
+  --color-blue-100: #e6f0fe;
+  --color-blue-50: #f3f8ff; /* page tint, auth background */
+  --color-cyan-400: #00c2fd; /* gradient end, shapes. Never text */
+  --color-yellow-300: #fdf15c; /* verified motif, light */
+  --color-amber-400: #fdca26; /* verified badge. Navy text on it. Never text on white */
+
+  /* Neutrals */
+  --color-white: #ffffff;
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569; /* body text. 7.58:1 */
+  --color-slate-700: #334155;
+  --color-slate-900: #0f172a;
+
+  /* Semantic */
+  --color-success-600: #15803d;
+  --color-success-50: #f0fdf4;
+  --color-warning-700: #b45309;
+  --color-warning-50: #fffbeb;
+  --color-danger-700: #b91c1c; /* text on danger-50 (danger-600 is only 4.41:1 there) */
+  --color-danger-600: #dc2626; /* borders, error text on white. 4.83:1 */
+  --color-danger-50: #fef2f2;
+  --color-info-600: var(--color-blue-600);
+  --color-info-50: var(--color-blue-50);
+
+  /* Role aliases (components use these) */
+  --color-bg: var(--color-white);
+  --color-surface: var(--color-white);
+  --color-surface-muted: var(--color-slate-50);
+  --color-text: var(--color-navy-900);
+  --color-text-body: var(--color-slate-600);
+  --color-text-muted: var(--color-slate-500);
+  --color-border: var(--color-slate-200);
+  --color-border-strong: var(--color-slate-300);
+  --color-primary: var(--color-blue-600);
+  --color-primary-hover: var(--color-blue-700);
+  --color-on-primary: var(--color-white);
+  --color-verified: var(--color-amber-400);
+  --color-on-verified: var(--color-navy-900);
+
+  /* Typography */
+  --font-display: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body);
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.375rem;
+  --text-5xl: 3rem;
+  --text-6xl: 3.75rem;
+  --leading-tight: 1.1;
+  --leading-snug: 1.2;
+  --leading-body: 1.6;
+  --tracking-tight: -0.02em;
+  --tracking-eyebrow: 0.08em;
+
+  /* Spacing (4px base: p-4 = 16px) */
+  --spacing: 0.25rem;
+
+  /* Layout */
+  --container-marketing: 75rem;
+  --container-app: 90rem;
+  --container-auth-form: 30rem;
+  --container-prose: 68ch;
+
+  /* Radii */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.5rem;
+  --radius-full: 9999px;
+
+  /* Shadows (navy-tinted) */
+  --shadow-sm: 0 1px 2px rgb(10 34 73 / 6%), 0 1px 3px rgb(10 34 73 / 8%);
+  --shadow-md: 0 4px 12px rgb(10 34 73 / 8%);
+  --shadow-lg: 0 16px 40px rgb(10 34 73 / 12%);
+
+  /* Motion */
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+  --duration-reveal: 600ms;
+  --ease-brand: cubic-bezier(0.22, 1, 0.36, 1);
+  --reveal-distance: 24px;
+  --stagger-step: 80ms;
+
+  /* Gradients */
+  --gradient-brand: linear-gradient(135deg, #0158e1 0%, #00c2fd 100%);
+  --gradient-verified: linear-gradient(135deg, #fdf15c 0%, #fdca26 100%);
+
+  /* Auth promo panel: white text sits on the dark top-left; cyan only reaches the far corner. */
+  --gradient-panel: linear-gradient(150deg, #0047b8 0%, #0158e1 55%, #00c2fd 100%);
+
+  /* Floating badges on the auth panel (stopped by the reduced-motion rule in base.css). */
+  --animate-float: float 4s ease-in-out infinite;
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+}
+
+:root {
+  --section-y: 6rem;
+  --section-y-mobile: 4rem;
+  --control-h-md: 2.75rem; /* 44px — also the minimum touch target */
+  --control-h-lg: 3.25rem; /* 52px */
+  --scroll-offset: 8.5rem; /* sticky header (80px) + service chips, so anchors land below them */
+  --focus-ring: 0 0 0 2px var(--color-white), 0 0 0 4px var(--color-blue-600);
+}

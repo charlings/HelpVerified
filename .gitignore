@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+.next/
+.next-*/
+out/
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# tests
+coverage/
+playwright-report/
+test-results/
+apps/web/lighthouse/
+
+# env
+.env
+.env.*
+!.env.example
+
+# original brand photos (14-25 MB each); optimised outputs in apps/web/public/images are committed — see ADR 0002
+specs/frontend/brandfiles/*.jpg
+
+# python (apps/api, from B1)
+__pycache__/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/

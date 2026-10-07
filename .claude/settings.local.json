@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(pnpm approve-builds *)",
+      "PowerShell(pnpm build *)"
+    ]
+  }
+}
