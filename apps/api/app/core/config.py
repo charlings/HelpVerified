@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     FEE_CHARGED_AT: Literal["accept"] = "accept"  # owner decision 2026-10-07 (ADR 0013)
     IDEMPOTENCY_TTL_HOURS: int = Field(default=24, gt=0)
 
+    # Payments (B5). Amounts are integer kobo; defaults are the frontend's demo prices (docs/placeholders.md).
+    PAYSTACK_SECRET_KEY: SecretStr = Field(min_length=10)
+    PAYSTACK_AGENCY_PLAN_CODE: str | None = None  # a monthly plan created in Paystack; subscriptions need it
+    PLACEMENT_FEE_KOBO: int = Field(default=2_000_000, gt=0)  # NGN 20,000
+    AGENCY_SUBSCRIPTION_KOBO: int = Field(default=2_500_000, gt=0)  # NGN 25,000 a month; must match the plan
+
     # Email: "outbox" writes messages to EMAIL_OUTBOX_DIR (development and test only). Providers arrive in B6.
     EMAIL_PROVIDER: Literal["outbox"] = "outbox"
     EMAIL_FROM: str = "HelpVerified <no-reply@helpverified.local>"
@@ -81,6 +87,18 @@ class Settings(BaseSettings):
     def _no_outbox_in_deployed_envs(self) -> Settings:
         if self.EMAIL_PROVIDER == "outbox" and self.is_deployed:
             raise ValueError("EMAIL_PROVIDER=outbox is for development only; configure a provider (B6)")
+        return self
+
+    @model_validator(mode="after")
+    def _live_paystack_only_in_production(self) -> Settings:
+        """Test keys everywhere except production (security-and-compliance.md §5). Never echoes the value."""
+        key = self.PAYSTACK_SECRET_KEY.get_secret_value()
+        if not key.startswith(("sk_test_", "sk_live_")):
+            raise ValueError("PAYSTACK_SECRET_KEY must be a Paystack secret key (sk_test_... or sk_live_...)")
+        if key.startswith("sk_live_") and self.APP_ENV != "production":
+            raise ValueError(
+                "PAYSTACK_SECRET_KEY is a live key; use a test key (sk_test_...) outside production"
+            )
         return self
 
     @property

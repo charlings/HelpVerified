@@ -7,15 +7,14 @@ from datetime import UTC, datetime, timedelta
 import time_machine
 from fastapi.testclient import TestClient
 
-from app.integrations.payments import UnconfiguredPayments
-from tests.conftest import ApiFactory, run_sql
+from tests.conftest import run_sql
 from tests.factories import listed_worker
-from tests.fakes import FakePayments
+from tests.fakes import FakePaystack
 from tests.helpers import API, bearer, error_code, login
 from tests.placement_flows import accept, agency, expire_holds, family, placed, post_request, propose
 
 
-def test_accept_holds_the_worker_and_returns_a_checkout(api: TestClient, payments: FakePayments) -> None:
+def test_accept_holds_the_worker_and_returns_a_checkout(api: TestClient, paystack: FakePaystack) -> None:
     fam = family(api)
     agc = agency(api)
     request_id = post_request(api, fam)
@@ -30,8 +29,16 @@ def test_accept_holds_the_worker_and_returns_a_checkout(api: TestClient, payment
     assert placement["status"] == "pending_payment"
     hold = datetime.fromisoformat(placement["hold_expires_at"]) - datetime.now(UTC)
     assert timedelta(minutes=29) < hold <= timedelta(minutes=30)
-    assert body["payment"]["reference"].startswith("HV-PF-")
-    assert payments.started == [uuid.UUID(placement["id"])]
+    reference = body["payment"]["reference"]
+    assert reference.startswith("HV-PF-")
+    assert body["payment"]["authorization_url"] == f"https://checkout.paystack.test/{reference}"
+    txn = paystack.transactions[reference]
+    assert txn["amount"] == 2_000_000  # the placement fee, in kobo
+    assert txn["email"] == "ada@example.com"
+    assert txn["callback_url"] == "http://localhost:3000/family/payments/callback"
+    assert txn["metadata"]["placement_id"] == placement["id"]
+    [(status, amount)] = run_sql("SELECT status::text, amount_kobo FROM payments")
+    assert (status, amount) == ("pending", 2_000_000)
     statuses = {row[0]: row[1] for row in run_sql("SELECT id::text, status::text FROM proposals")}
     assert statuses == {chosen: "accepted", other: "superseded"}
     assert api.get(f"{API}/requests/{request_id}", headers=fam).json()["status"] == "matched"
@@ -94,7 +101,7 @@ def test_second_family_gets_worker_unavailable(api: TestClient) -> None:
     assert response.json()["error"]["message"]
 
 
-def test_idempotency_key_replays_the_first_response(api: TestClient, payments: FakePayments) -> None:
+def test_idempotency_key_replays_the_first_response(api: TestClient, paystack: FakePaystack) -> None:
     fam = family(api)
     agc = agency(api)
     proposal = propose(api, agc, post_request(api, fam), listed_worker(agc.id))
@@ -107,7 +114,7 @@ def test_idempotency_key_replays_the_first_response(api: TestClient, payments: F
     assert first.status_code == replay.status_code == 201
     assert replay.json() == first.json()
     assert replay.headers["idempotent-replay"] == "true"
-    assert len(payments.started) == 1
+    assert len(paystack.transactions) == 1
     assert error_code(no_key) == "REQUEST_NOT_OPEN"  # without the key, a second accept is just refused
     [(count,)] = run_sql("SELECT count(*) FROM placements")
     assert count == 1
@@ -158,15 +165,23 @@ def test_hold_expiry_job(api: TestClient) -> None:
     assert api.get(f"{API}/requests/{hold.request_id}", headers=hold.family).json()["status"] == "open"
 
 
-def test_unconfigured_payments_keep_the_hold_and_say_so(make_api: ApiFactory) -> None:
-    api = make_api(gateway=UnconfiguredPayments())
+def test_paystack_down_keeps_the_hold_and_pay_resumes(api: TestClient, paystack: FakePaystack) -> None:
     fam = family(api)
     agc = agency(api)
     proposal = propose(api, agc, post_request(api, fam), listed_worker(agc.id))
+    paystack.down = True
 
     response = api.post(f"{API}/proposals/{proposal}/accept", headers=fam)
 
     assert response.status_code == 502
     assert error_code(response) == "PAYMENT_PROVIDER_ERROR"
-    [(status,)] = run_sql("SELECT status::text FROM placements")
+    [(placement_id, status)] = run_sql("SELECT id::text, status::text FROM placements")
     assert status == "pending_payment"  # the worker is held while the family retries
+    paystack.down = False
+    retry = api.post(f"{API}/placements/{placement_id}/pay", headers=fam)
+    again = api.post(f"{API}/placements/{placement_id}/pay", headers=fam)
+    assert retry.status_code == 200
+    assert again.json() == retry.json()  # the same checkout, never a second charge
+    assert len(paystack.transactions) == 1
+    statuses = sorted(str(s) for (s,) in run_sql("SELECT status::text FROM payments"))
+    assert statuses == ["failed", "pending"]  # the attempt that never reached Paystack, and the live one

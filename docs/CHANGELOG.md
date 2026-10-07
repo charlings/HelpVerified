@@ -1,5 +1,64 @@
 # Changelog
 
+## B5 — Payments (2026-10-07)
+
+### 1. Objective
+Real money flows through Paystack (test mode): accept opens a checkout for the placement fee; only a signed, deduplicated webhook or the callback check, both re-verified with Paystack, starts the trial; late payments are refunded and can never create a second placement; agencies subscribe to a monthly plan.
+
+### 2. Files created
+- Migration `20261007_0005_payments.py` and copy `app/db/sql/0005_payments.sql`: `payments` (kobo, unique reference, one pending fee per placement), `webhook_events` (unique per provider and event)
+- `app/integrations/paystack.py` (initialise, verify, refund, fetch subscription, signature check)
+- `app/modules/payments/` (`models`, `repository`, `schemas`, `service`, `router`): `/payments`, `/payments/{ref}/verify`, `/placements/{id}/pay`, `/billing/subscription` (GET, POST), `/webhooks/paystack`
+- `apps/api/scripts/paystack_live_check.py`
+- Tests: `integration/test_paystack_webhook.py`, `test_payments_billing.py`, `unit/test_paystack.py`; `FakePaystack`
+- `docs/decisions/0014-b5-payments.md`
+
+### 3. Files modified
+- `app/integrations/payments.py`: just the interface (the "unconfigured" stand-in is gone)
+- `app/modules/placements/service.py`: `begin_trial_locked` for settling; releasing a hold fails its pending payment
+- `app/modules/agencies/repository.py`: subscription queries; `app/modules/admin/service.py`: real `fees_paid_this_month_kobo`
+- `app/core/config.py`: Paystack key (live refused outside production), plan code, prices; `app/core/deps.py`, `app/main.py`: payment service wiring
+- Tests: shared fake Paystack, settings test checks only required keys, B4 accept tests now assert the real checkout
+- `.env.example`, `.github/workflows/ci.yml` (per-run `sk_test_` key), `README.md`, `CLAUDE.md`, `docs/database.md`
+
+### 4. Key decisions
+ADR 0014: one place grants value and always re-verifies; signed, idempotent webhook that fails (502) to be retried; card details scrubbed; late payments refunded; one checkout per hold; lock order placement then payment; prices as settings; subscription lifecycle and reconciliation; live keys refused outside production; logs carry Paystack's message, never bodies.
+
+### 5. Tests and checks
+| Check | Result |
+| --- | --- |
+| `ruff`, `mypy app tests scripts` (strict) | Pass, 145 files |
+| `pytest -q` | **361 passed** (about 5 minutes on today's slower machine) |
+| Webhook (spec item 24) | Bad or missing signature → 401, nothing stored; duplicate → 200, no second effect; Paystack says unpaid → nothing; amount mismatch → nothing; paid after the hold lapsed and the worker was taken → refunded, still one active placement |
+| Robustness | Paystack down during accept → 502, hold kept, `/pay` resumes one checkout; Paystack down during re-verify → 502, the redelivery succeeds; payment after cancelling → refunded |
+| Subscriptions | Plan checkout; paying activates (dashboard `active`); create → past_due → cancelled via events; reconcile matches Paystack |
+| **Live Paystack (owner's test account)** | `initialize` created a real test checkout (`checkout.paystack.com/…`); `verify` read it back: `abandoned`, 2,000,000 kobo, NGN. Found and fixed: Paystack rejects `.test` emails |
+| Migrations | up → base → up; models match migrations |
+
+### 6. Known issues
+- The webhook can't reach `localhost`. Signed events are tested locally; the live webhook is checked on deployment (B8) or through a tunnel.
+- A failed refund call is only logged; B6 adds a retry.
+- Subscriptions need `PAYSTACK_AGENCY_PLAN_CODE` (a monthly plan in your Paystack dashboard) whose price equals `AGENCY_SUBSCRIPTION_KOBO`.
+- The B8 demo seed must use email domains Paystack accepts (`@demo.hv` probably won't be).
+- Prices are the demo values until you set real ones.
+
+### 7. Assumptions
+- One subscription per agency; renewals are Paystack-driven and reconciled.
+- An abandoned checkout stays `pending` until the hold ends (then `failed`), so the family can still finish it.
+
+### 8. Acceptance criteria (B5 row: "Paystack init/verify, webhook, holds, subscriptions, agency gating; webhook and hold tests pass")
+| Item | Result |
+| --- | --- |
+| Init and verify | **Met** (fake in tests; live test-mode check passed) |
+| Webhook: signature, idempotency, re-verification, refund on race | **Met** |
+| Holds: one checkout, resume, fail on cancel or expiry | **Met** |
+| Subscriptions and agency gating | **Met** (`AGENCY_NOT_ACTIVE` until the subscription is active) |
+
+### 9. Recommended next step
+B6: notifications and jobs. Schedule `expire_holds` (every minute), `expire_lapsed` checks (daily), `reconcile_subscriptions` (hourly), trial reminders, and retries for refunds and notifications. Add the Firestore notification feed and real transactional email (provider to choose).
+
+**Signed off by the owner 2026-10-07.** At the owner's request, pending owner inputs are now tracked in `docs/owner-inputs.md` and reported after every milestone.
+
 ## B4 — Requests, proposals, placements (2026-10-07)
 
 ### 1. Objective

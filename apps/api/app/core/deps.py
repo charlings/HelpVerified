@@ -21,12 +21,13 @@ from app.core.rate_limit import RateLimiter
 from app.core.security import decode_access_token
 from app.integrations.cloudinary import Cloudinary
 from app.integrations.email import EmailSender
-from app.integrations.payments import PaymentGateway
+from app.integrations.paystack import PaystackApi
 from app.modules.admin.service import AdminService
 from app.modules.agencies.models import Agency
 from app.modules.agencies.service import AgencyService
 from app.modules.auth.service import AuthService
 from app.modules.families.service import FamilyService
+from app.modules.payments.service import PaymentService
 from app.modules.placements.service import PlacementService
 from app.modules.requests.service import RequestService
 from app.modules.users.models import User, UserRole
@@ -94,9 +95,18 @@ def get_admin_service(session: SessionDep, settings: SettingsDep) -> AdminServic
     return AdminService(session, settings)
 
 
-def get_payments(request: Request) -> PaymentGateway:
-    payments: PaymentGateway = request.app.state.payments
-    return payments
+def get_paystack(request: Request) -> PaystackApi:
+    paystack: PaystackApi = request.app.state.paystack
+    return paystack
+
+
+def get_payment_service(
+    session: SessionDep, settings: SettingsDep, paystack: Annotated[PaystackApi, Depends(get_paystack)]
+) -> PaymentService:
+    return PaymentService(session, settings, paystack)
+
+
+PaymentServiceDep = Annotated[PaymentService, Depends(get_payment_service)]
 
 
 def get_idempotency(request: Request) -> IdempotencyStore:
@@ -109,8 +119,9 @@ def get_request_service(session: SessionDep) -> RequestService:
 
 
 def get_placement_service(
-    session: SessionDep, settings: SettingsDep, payments: Annotated[PaymentGateway, Depends(get_payments)]
+    session: SessionDep, settings: SettingsDep, payments: PaymentServiceDep
 ) -> PlacementService:
+    """Accept opens the fee's checkout through the payment service (the placement's PaymentGateway)."""
     return PlacementService(session, settings, payments)
 
 

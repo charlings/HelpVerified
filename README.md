@@ -6,7 +6,7 @@ Families in Nigeria hire nannies, drivers and cleaners whose **ID, guarantor, re
 - Working rules for contributors and Claude Code: `CLAUDE.md` and `.claude/skills/helpverified/`
 - Architecture and decisions: `docs/`
 
-**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold), B2 (auth), B3 (agencies, workers, verification) and B4 (requests, proposals, placements) are done; the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
+**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold), B2 (auth), B3 (agencies, workers, verification) B4 (requests, proposals, placements) and B5 (Paystack payments, test mode) are done; the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
 
 ## Requirements
 
@@ -27,7 +27,7 @@ The design-token and component gallery is at http://localhost:3000/styleguide (d
 
 ### API (apps/api)
 
-1. Copy the API section at the bottom of `.env.example` to `apps/api/.env`. Set `JWT_SECRET` and `NIN_PEPPER` to random values (the command is in the comment above them), and fill in `CLOUDINARY_*` from your Cloudinary console. Tests never upload; they use a fake.
+1. Copy the API section at the bottom of `.env.example` to `apps/api/.env`. Set `JWT_SECRET` and `NIN_PEPPER` to random values (the command is in the comment above them), fill in `CLOUDINARY_*` from your Cloudinary console, and `PAYSTACK_SECRET_KEY` with a **test** key (`sk_test_...`). Tests never upload or charge; they use fakes. To check the real accounts: `uv run python -m scripts.cloudinary_live_check` and `uv run python -m scripts.paystack_live_check start`.
 2. Start PostgreSQL 16 and Redis 7 with **one** of these:
    - **Docker:** `docker compose up -d postgres redis`
    - **No Docker or no admin rights (Windows):**
@@ -115,7 +115,7 @@ First Playwright run: `pnpm --filter web exec playwright install chromium webkit
 | `docs/bundles.md` | JS per page and the budgets CI enforces |
 | `docs/design-tokens.md`, `docs/asset-inventory.md`, `docs/content.md`, `docs/placeholders.md`, `docs/reference-adaptation.md` | Design system, assets, copy, temporary items, reference sites |
 | `docs/database.md` | What's in the database now: migrations, ERD, rules enforced in SQL |
-| `docs/decisions/` | Architecture decision records (ADRs 0001–0013) |
+| `docs/decisions/` | Architecture decision records (ADRs 0001–0014) |
 | `docs/CHANGELOG.md` | A report per milestone |
 
 ## Brand originals

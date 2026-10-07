@@ -100,7 +100,7 @@ class AdminOverview(BaseModel):
     workers_listed: int
     placements_active: int
     trials_ending_soon: int = Field(description="Trials ending within the next 3 days")
-    fees_paid_this_month_kobo: int = Field(description="Placement fees paid this month (from B5)")
+    fees_paid_this_month_kobo: int = Field(description="Placement fees paid this calendar month (WAT)")
     pending_agencies: list[AdminAgencySummary]
     recent_audit: list[AuditEntry]
 

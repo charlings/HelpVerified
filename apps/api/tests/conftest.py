@@ -38,17 +38,21 @@ TEST_ENV = {
     "CLOUDINARY_CLOUD_NAME": "hv-test",
     "CLOUDINARY_API_KEY": "123456789012345",
     "CLOUDINARY_API_SECRET": "test-cloudinary-secret",
+    # Not a real key: every test talks to tests.fakes.FakePaystack.
+    "PAYSTACK_SECRET_KEY": "sk_test_fake_not_a_real_key_0123456789",
+    "PAYSTACK_AGENCY_PLAN_CODE": "PLN_test_agency_monthly",
 }
 os.environ.update(TEST_ENV)
 
 from app.core.config import Settings, get_settings, load_settings  # noqa: E402
 from app.db.session import create_sessionmaker  # noqa: E402
-from app.integrations.payments import PaymentGateway  # noqa: E402
 from app.main import create_app  # noqa: E402
-from tests.fakes import FakeCloudinary, FakePayments, MemoryEmailSender  # noqa: E402
+from tests.fakes import FakeCloudinary, FakePaystack, MemoryEmailSender  # noqa: E402
 
 ALEMBIC_INI = Path(__file__).parents[1] / "alembic.ini"
 TABLES = (
+    "webhook_events",
+    "payments",
     "replacement_requests",
     "placement_events",
     "placements",
@@ -196,14 +200,14 @@ def cloudinary(_session_cloudinary: FakeCloudinary) -> FakeCloudinary:
 
 
 @pytest.fixture(scope="session")
-def _session_payments() -> FakePayments:
-    return FakePayments()
+def _session_paystack() -> FakePaystack:
+    return FakePaystack()
 
 
 @pytest.fixture
-def payments(_session_payments: FakePayments) -> FakePayments:
-    _session_payments.started.clear()
-    return _session_payments
+def paystack(_session_paystack: FakePaystack) -> FakePaystack:
+    _session_paystack.reset()
+    return _session_paystack
 
 
 @pytest.fixture(scope="session")
@@ -211,7 +215,7 @@ def shared_api(
     db_ready: None,
     _session_outbox: MemoryEmailSender,
     _session_cloudinary: FakeCloudinary,
-    _session_payments: FakePayments,
+    _session_paystack: FakePaystack,
 ) -> Iterator[TestClient]:
     """One running app for the whole session. Closing pooled PostgreSQL connections costs seconds
     on Windows, so tests share this app's pool; `api` resets its state between tests."""
@@ -220,7 +224,7 @@ def shared_api(
         load_settings(),
         email_sender=_session_outbox,
         cloudinary=_session_cloudinary,
-        payments=_session_payments,
+        paystack=_session_paystack,
     )
     with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
@@ -237,16 +241,15 @@ ApiFactory = Callable[..., TestClient]
 
 @pytest.fixture
 def make_api(
-    clean_state: None, outbox: MemoryEmailSender, cloudinary: FakeCloudinary, payments: FakePayments
+    clean_state: None, outbox: MemoryEmailSender, cloudinary: FakeCloudinary, paystack: FakePaystack
 ) -> Iterator[ApiFactory]:
-    """Builds a separate running app with settings overrides (slower: it opens its own connections).
-    `gateway=` swaps the payment gateway (for example, the real unconfigured one)."""
+    """Builds a separate running app with settings overrides (slower: it opens its own connections)."""
     clients: list[TestClient] = []
 
-    def build(gateway: PaymentGateway | None = None, **overrides: object) -> TestClient:
+    def build(**overrides: object) -> TestClient:
         get_settings.cache_clear()
         settings = load_settings().model_copy(update=overrides)
-        app = create_app(settings, email_sender=outbox, cloudinary=cloudinary, payments=gateway or payments)
+        app = create_app(settings, email_sender=outbox, cloudinary=cloudinary, paystack=paystack)
         test_client = TestClient(app, raise_server_exceptions=False)
         test_client.__enter__()
         clients.append(test_client)
@@ -263,7 +266,7 @@ def api(
     clean_state: None,
     outbox: MemoryEmailSender,
     cloudinary: FakeCloudinary,
-    payments: FakePayments,
+    paystack: FakePaystack,
 ) -> TestClient:
     """The running app with default test settings, empty data, no cookies and fresh fakes."""
     shared_api.cookies.clear()

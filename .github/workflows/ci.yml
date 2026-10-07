@@ -150,6 +150,7 @@ jobs:
           echo "CLOUDINARY_API_SECRET=$(openssl rand -hex 16)" >> "$GITHUB_ENV"
           echo "CLOUDINARY_CLOUD_NAME=ci-unused" >> "$GITHUB_ENV"
           echo "CLOUDINARY_API_KEY=000000000000000" >> "$GITHUB_ENV"
+          echo "PAYSTACK_SECRET_KEY=sk_test_$(openssl rand -hex 20)" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true

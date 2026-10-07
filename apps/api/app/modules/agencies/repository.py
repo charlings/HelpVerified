@@ -57,8 +57,27 @@ class AgencyRepository:
         )
         return list(rows)
 
-    async def subscription(self, agency_id: uuid.UUID) -> Subscription | None:
-        return await self.session.scalar(select(Subscription).where(Subscription.agency_id == agency_id))
+    async def subscription(self, agency_id: uuid.UUID, *, for_update: bool = False) -> Subscription | None:
+        query = select(Subscription).where(Subscription.agency_id == agency_id)
+        return await self.session.scalar(query.with_for_update() if for_update else query)
+
+    async def subscription_by_code(self, code: str) -> Subscription | None:
+        return await self.session.scalar(
+            select(Subscription).where(Subscription.paystack_subscription_code == code).with_for_update()
+        )
+
+    async def linked_subscriptions(self) -> list[Subscription]:
+        """Subscriptions Paystack knows about (they have a subscription code)."""
+        rows = await self.session.scalars(
+            select(Subscription).where(Subscription.paystack_subscription_code.is_not(None))
+        )
+        return list(rows)
+
+    async def add_subscription(self, subscription: Subscription) -> Subscription:
+        self.session.add(subscription)
+        await self.session.flush()
+        await self.session.refresh(subscription)
+        return subscription
 
     async def admin_user(self, agency_id: uuid.UUID) -> User | None:
         return await self.session.scalar(

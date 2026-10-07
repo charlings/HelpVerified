@@ -8,6 +8,7 @@ PostgreSQL 16. Migrations in `apps/api/app/db/migrations/versions/`, with readab
 | `0002` identity | B2 | `user_role`, `account_status` enums; `users`, `refresh_tokens`, `one_time_tokens` |
 | `0003` agencies, workers | B3 | Six enums; `agencies`, `agency_members`, `subscriptions`, `workers`, `verification_items`, `verification_documents`, `document_access_log`, `audit_log`; **rule 1 triggers** |
 | `0004` requests, placements | B4 | Five enums; `families`, `requests`, `proposals`, `placements`, `placement_events`, `replacement_requests`; **rule 2 index** |
+| `0005` payments | B5 | `payment_kind`, `payment_status`; `payments`, `webhook_events` |
 
 ## Entity-relationship diagram
 
@@ -32,6 +33,30 @@ erDiagram
     placements ||--|{ placement_events : "history"
     placements ||--o{ replacement_requests : "replaced via"
     replacement_requests |o--o| requests : "opens"
+    placements ||--o{ payments : "fee"
+    agencies ||--o{ payments : "subscription"
+    users ||--o{ payments : pays
+
+    payments {
+        uuid id PK
+        payment_kind kind "placement_fee | subscription"
+        uuid placement_id FK "fees"
+        uuid agency_id FK "subscriptions"
+        bigint amount_kobo
+        text paystack_reference UK
+        text authorization_url "resumed by /pay"
+        payment_status status "pending | success | failed | refunded"
+        timestamptz paid_at
+        timestamptz refunded_at
+    }
+    webhook_events {
+        uuid id PK
+        text provider
+        text event_id "UK with provider"
+        text event_type
+        jsonb payload "card authorization removed"
+        timestamptz processed_at
+    }
 
     families {
         uuid id PK
@@ -181,3 +206,7 @@ erDiagram
 | A placement is consistent with its status | `ck_placements_hold`, `ck_placements_trial_dates`, `ck_placements_confirmed_at`, `ck_placements_end_fields` |
 | One proposal per worker per request | `uq_proposals_request_id_worker_id` (a withdrawn proposal is reused when re-proposed) |
 | Trials last 7 to 30 days | `ck_requests_trial_days` |
+| A webhook event is processed once | `uq_webhook_events_provider_event_id` |
+| One open checkout per hold | Partial unique index `payments_one_pending_fee_per_placement` |
+| Money is positive integer kobo in NGN; a successful payment has a time | `ck_payments_amount`, `ck_payments_currency`, `ck_payments_paid_at` |
+| A fee belongs to a placement, a subscription to an agency | `ck_payments_kind_target` |

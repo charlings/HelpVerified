@@ -21,11 +21,12 @@ from app.core.rate_limit import RateLimiter
 from app.db.session import create_engine, create_sessionmaker
 from app.integrations.cloudinary import Cloudinary, CloudinaryClient
 from app.integrations.email import EmailSender, OutboxEmailSender
-from app.integrations.payments import PaymentGateway, UnconfiguredPayments
+from app.integrations.paystack import PaystackApi, PaystackClient
 from app.modules.admin.router import router as admin_router
 from app.modules.agencies.router import router as agencies_router
 from app.modules.auth.router import router as auth_router
 from app.modules.families.router import router as families_router
+from app.modules.payments.router import router as payments_router
 from app.modules.placements.router import router as placements_router
 from app.modules.requests.router import router as requests_router
 from app.modules.users.router import router as users_router
@@ -43,7 +44,7 @@ def create_app(
     settings: Settings | None = None,
     email_sender: EmailSender | None = None,
     cloudinary: Cloudinary | None = None,
-    payments: PaymentGateway | None = None,
+    paystack: PaystackApi | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.LOG_LEVEL)
@@ -55,7 +56,7 @@ def create_app(
         app.state.sessionmaker = create_sessionmaker(engine)
         app.state.rate_limiter = RateLimiter(redis)
         app.state.idempotency = IdempotencyStore(redis, timedelta(hours=settings.IDEMPOTENCY_TTL_HOURS))
-        app.state.payments = payments or UnconfiguredPayments()  # Paystack arrives in B5
+        app.state.paystack = paystack or PaystackClient(settings.PAYSTACK_SECRET_KEY.get_secret_value())
         app.state.email_sender = email_sender or OutboxEmailSender(
             settings.EMAIL_OUTBOX_DIR, settings.EMAIL_FROM
         )
@@ -105,6 +106,7 @@ def create_app(
         requests_router,
         placements_router,
         families_router,
+        payments_router,
         admin_router,
     ):
         app.include_router(router, prefix=API_PREFIX)

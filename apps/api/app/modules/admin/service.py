@@ -9,13 +9,13 @@ placements keep running.
 
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import utcnow
 from app.core.config import Settings
-from app.core.dates import lagos_date
+from app.core.dates import LAGOS, lagos_date
 from app.core.errors import IllegalTransition, NotFound, ValidationFailed
 from app.core.pagination import PageParams
 from app.modules.admin.models import AuditAction
@@ -32,6 +32,7 @@ from app.modules.admin.schemas import (
 from app.modules.agencies.models import Agency, AgencyStatus, WorkerRole
 from app.modules.agencies.repository import AgencyRepository
 from app.modules.agencies.schemas import SubscriptionOut, WorkerCounts
+from app.modules.payments.repository import PaymentRepository
 from app.modules.placements.repository import PlacementRepository
 from app.modules.requests.repository import RequestRepository
 from app.modules.users.models import User
@@ -86,7 +87,9 @@ class AdminService:
 
     async def overview(self) -> AdminOverview:
         """The admin home: counts, the approval queue (oldest first) and the latest audit entries."""
-        soon = lagos_date(utcnow()) + timedelta(days=TRIALS_ENDING_SOON_DAYS)
+        today = lagos_date(utcnow())
+        soon = today + timedelta(days=TRIALS_ENDING_SOON_DAYS)
+        month_start = datetime(today.year, today.month, 1, tzinfo=LAGOS)  # this month, Nigerian calendar
         async with self.session.begin():
             pending = await self.agencies.pending_oldest_first()
             totals = {agency.id: await self.agencies.worker_counts(agency.id) for agency in pending}
@@ -96,7 +99,7 @@ class AdminService:
                 workers_listed=await self.workers.count_listed(),
                 placements_active=await self.placements.count_active(),
                 trials_ending_soon=len(await self.placements.trials_ending(soon)),
-                fees_paid_this_month_kobo=0,  # payments arrive in B5
+                fees_paid_this_month_kobo=await PaymentRepository(self.session).fees_paid_since(month_start),
                 pending_agencies=[AdminAgencySummary.of(a, totals[a.id]["total"]) for a in pending],
                 recent_audit=[AuditEntry.of(entry, actor) for entry, actor in recent],
             )

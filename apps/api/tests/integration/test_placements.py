@@ -255,7 +255,7 @@ def test_dashboards_and_overview_see_placements(api: TestClient) -> None:
     assert overview["placements_active"] == 1
     assert overview["trials_ending_soon"] == 1
     assert overview["workers_listed"] == 1
-    assert overview["fees_paid_this_month_kobo"] == 0
+    assert overview["fees_paid_this_month_kobo"] == 2_000_000
     assert agency_detail["active_placements"] == 1
 
 

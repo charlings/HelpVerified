@@ -34,6 +34,7 @@ from app.modules.admin.models import AuditAction
 from app.modules.admin.repository import AuditRepository
 from app.modules.agencies.repository import AgencyRepository
 from app.modules.families.repository import FamilyRepository
+from app.modules.payments.repository import PaymentRepository
 from app.modules.placements.models import (
     EndReason,
     Placement,
@@ -161,21 +162,27 @@ class PlacementService:
         return Accepted(placement=summary, checkout=checkout)
 
     async def start_trial(self, placement_id: uuid.UUID, actor_id: uuid.UUID | None = None) -> Placement:
-        """pending_payment → trial once the fee is paid. B5's verified Paystack webhook calls this."""
-        now = utcnow()
+        """pending_payment → trial once the fee is paid (its own transaction)."""
         async with self.session.begin():
             placement = await self._locked(placement_id)
-            request = await self.requests.get(placement.request_id)
-            assert request is not None  # noqa: S101  # FK
-            if placement.status is not PlacementStatus.pending_payment:
-                raise IllegalTransition()
-            fields = self._trial_fields(request, now)
-            placement.trial_starts_on = fields["trial_starts_on"]  # type: ignore[assignment]
-            placement.trial_ends_on = fields["trial_ends_on"]  # type: ignore[assignment]
-            await self._move(placement, PlacementStatus.trial, actor_id, None, now)
-            placement.hold_expires_at = None
-            await self.session.flush()
+            await self.begin_trial_locked(placement, utcnow(), actor_id)
             return placement
+
+    async def begin_trial_locked(
+        self, placement: Placement, now: datetime, actor_id: uuid.UUID | None = None
+    ) -> None:
+        """pending_payment → trial inside the caller's transaction; the caller holds the placement lock.
+        The payment service calls this once Paystack has confirmed the fee."""
+        if placement.status is not PlacementStatus.pending_payment:
+            raise IllegalTransition()
+        request = await self.requests.get(placement.request_id)
+        assert request is not None  # noqa: S101  # FK
+        fields = self._trial_fields(request, now)
+        placement.trial_starts_on = fields["trial_starts_on"]  # type: ignore[assignment]
+        placement.trial_ends_on = fields["trial_ends_on"]  # type: ignore[assignment]
+        await self._move(placement, PlacementStatus.trial, actor_id, None, now)
+        placement.hold_expires_at = None
+        await self.session.flush()
 
     # Family actions
 
@@ -335,11 +342,13 @@ class PlacementService:
         end_reason: EndReason,
         now: datetime,
     ) -> None:
-        """pending_payment → cancelled; the request reopens and its proposals return to pending."""
+        """pending_payment → cancelled; the request reopens and its proposals return to pending.
+        The unpaid checkout is marked failed: if the family pays it anyway, the payment is refunded."""
         placement.end_reason = end_reason
         placement.ended_at = now
         await self._move(placement, PlacementStatus.cancelled, actor_id, reason, now)
         placement.hold_expires_at = None
+        await PaymentRepository(self.session).fail_pending_fee(placement.id)
         request = await self.requests.get(placement.request_id, for_update=True)
         if request is not None and request.status is RequestStatus.matched:
             request.status = RequestStatus.open

@@ -14,7 +14,7 @@ def no_env_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
 
 
-@pytest.mark.parametrize("key", sorted(TEST_ENV))
+@pytest.mark.parametrize("key", sorted(k for k in TEST_ENV if Settings.model_fields[k].is_required()))
 def test_missing_required_key_is_named(monkeypatch: pytest.MonkeyPatch, key: str) -> None:
     monkeypatch.delenv(key)
 

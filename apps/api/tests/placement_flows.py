@@ -11,7 +11,7 @@ from app.core.clock import utcnow
 from app.core.config import load_settings
 from app.core.dates import lagos_date
 from app.modules.placements.service import PlacementService
-from tests.conftest import helper_sessions, run_async
+from tests.conftest import helper_sessions, run_async, run_sql
 from tests.factories import create_agency, listed_worker
 from tests.fakes import FakePayments
 from tests.helpers import API, bearer, create_user, login
@@ -89,8 +89,14 @@ def expire_holds() -> int:
 
 
 def mark_paid(placement_id: str) -> None:
-    """What B5's verified Paystack webhook will do: pending_payment → trial."""
+    """A shortcut for tests that don't exercise Paystack: the fee is recorded as paid and the trial starts
+    (test_paystack_webhook.py covers the real path, through the signed webhook)."""
     run_async(_start_trial(uuid.UUID(placement_id)))
+    run_sql(
+        "UPDATE payments SET status = 'success', paid_at = now() "
+        "WHERE placement_id = :p AND status = 'pending'",
+        p=uuid.UUID(placement_id),
+    )
 
 
 @dataclass
