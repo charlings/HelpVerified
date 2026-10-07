@@ -55,7 +55,8 @@ def envelope_response(
 
 async def _domain_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, DomainError)  # noqa: S101  # registered for DomainError only
-    return envelope_response(exc, request_id_of(request))
+    headers = {"Retry-After": str(exc.retry_after_seconds)} if isinstance(exc, RateLimited) else None
+    return envelope_response(exc, request_id_of(request), headers=headers)
 
 
 async def _http_error(request: Request, exc: Exception) -> JSONResponse:

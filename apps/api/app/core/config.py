@@ -7,7 +7,15 @@ here is also listed in the repo's `.env.example`.
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, PostgresDsn, ValidationError, field_validator
+from pydantic import (
+    Field,
+    PostgresDsn,
+    RedisDsn,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -23,6 +31,24 @@ class Settings(BaseSettings):
     WEB_BASE_URL: str
     CORS_ORIGINS: Annotated[list[str], NoDecode]
     DATABASE_URL: PostgresDsn
+    REDIS_URL: RedisDsn
+
+    # Auth (B2)
+    JWT_SECRET: SecretStr = Field(min_length=32)
+    JWT_ACCESS_TTL_MIN: int = Field(default=15, gt=0)
+    JWT_REFRESH_TTL_DAYS: int = Field(default=14, gt=0)
+    VERIFY_EMAIL_TTL_HOURS: int = Field(default=24, gt=0)
+    RESET_PASSWORD_TTL_MIN: int = Field(default=60, gt=0)
+
+    # Rate limits (backend.md §9)
+    RATE_LIMIT_AUTH_PER_MIN: int = Field(default=5, gt=0)
+    RATE_LIMIT_EMAIL_PER_HOUR: int = Field(default=3, gt=0)
+    RATE_LIMIT_USER_PER_MIN: int = Field(default=120, gt=0)
+
+    # Email: "outbox" writes messages to EMAIL_OUTBOX_DIR (development and test only). Providers arrive in B6.
+    EMAIL_PROVIDER: Literal["outbox"] = "outbox"
+    EMAIL_FROM: str = "HelpVerified <no-reply@helpverified.local>"
+    EMAIL_OUTBOX_DIR: str = ".outbox"
 
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     MAX_BODY_BYTES: int = Field(default=1_048_576, gt=0)
@@ -34,9 +60,20 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
+    @model_validator(mode="after")
+    def _no_outbox_in_deployed_envs(self) -> Settings:
+        if self.EMAIL_PROVIDER == "outbox" and self.is_deployed:
+            raise ValueError("EMAIL_PROVIDER=outbox is for development only; configure a provider (B6)")
+        return self
+
     @property
     def database_url(self) -> str:
         return str(self.DATABASE_URL)
+
+    @property
+    def is_deployed(self) -> bool:
+        """Staging and production: real email, Secure cookies."""
+        return self.APP_ENV in ("staging", "production")
 
 
 def load_settings() -> Settings:
@@ -47,8 +84,9 @@ def load_settings() -> Settings:
         problems = sorted(
             {
                 f"{error['loc'][0]} ({'missing' if error['type'] == 'missing' else error['msg']})"
-                for error in exc.errors()
                 if error["loc"]
+                else str(error["msg"])
+                for error in exc.errors()
             }
         )
         raise MissingSettingsError(

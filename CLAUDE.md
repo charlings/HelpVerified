@@ -15,10 +15,10 @@ Both are enforced in PostgreSQL (trigger + partial unique index) **and** in one 
 
 <!-- Update this block at the start and end of every milestone. -->
 - **Phase:** 2 — Backend (owner started it 2026-10-07)
-- **Milestone:** B1 — Scaffold, signed off by owner 2026-10-07. Next: B2 — Auth (Redis option for local dev to be decided at B2).
+- **Milestone:** B2 — Auth, signed off by owner 2026-10-07 (Google sign-in deferred to its own stage before B7, ADR 0011). B1 signed off by owner 2026-10-07. Next: B3 — Agencies, workers, verification (owner has a Cloudinary account).
 - **Status:** Phase 1 frontend signed off 2026-10-06 (`docs/frontend-signoff.md`; Lighthouse performance still to be confirmed by the CI job). API contract frozen (ADR 0009). Backend follows `docs/backend-handoff.md`; B1 choices in ADR 0010.
 - **Git:** remote `origin` = https://github.com/charlings/HelpVerified. `main` holds the signed-off frontend. Backend milestones go on `feature/backend`: commit each milestone after the owner signs it off, push the branch, and merge into `main` only when the owner asks.
-- **Local database:** no Docker or admin rights on the owner's machine. PostgreSQL 16 runs from `%LOCALAPPDATA%\pgsql16` via `apps/api/scripts/pg-portable.ps1 start` (start it after each reboot).
+- **Local services:** no Docker or admin rights on the owner's machine. PostgreSQL 16 runs from `%LOCALAPPDATA%\pgsql16` (`apps/api/scripts/pg-portable.ps1 start`) and Redis 7.4 from `%LOCALAPPDATA%\redis7` (`apps/api/scripts/redis-portable.ps1 start`); start both after each reboot. Tests use `127.0.0.1`, not `localhost` (Windows IPv6 fallback costs ~2 s per connection).
 - **Data:** frontend uses MSW mocks (`NEXT_PUBLIC_API_MOCKING=enabled`) until B7. Never imply auth or payments are real while mocks are on.
 
 ## Stack

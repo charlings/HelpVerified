@@ -110,6 +110,10 @@ class ValidationFailed(DomainError):
 class RateLimited(DomainError):
     code, status, default_message = "RATE_LIMITED", 429, "Too many requests."
 
+    def __init__(self, retry_after_seconds: int = 60, message: str | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = max(1, retry_after_seconds)
+
 
 class PaymentProviderError(DomainError):
     code, status, default_message = (

@@ -123,6 +123,15 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
       APP_ENV: test
       API_BASE_URL: http://localhost:8000
@@ -130,8 +139,12 @@ jobs:
       CORS_ORIGINS: http://localhost:3000
       DATABASE_URL: postgresql+asyncpg://helpverified:helpverified@localhost:5432/helpverified_test
       TEST_DATABASE_URL: postgresql+asyncpg://helpverified:helpverified@localhost:5432/helpverified_test
+      REDIS_URL: redis://localhost:6379/0
+      TEST_REDIS_URL: redis://localhost:6379/15
     steps:
       - uses: actions/checkout@v4
+      - name: Generate a throwaway JWT secret
+        run: echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true

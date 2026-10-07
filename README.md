@@ -6,13 +6,13 @@ Families in Nigeria hire nannies, drivers and cleaners whose **ID, guarantor, re
 - Working rules for contributors and Claude Code: `CLAUDE.md` and `.claude/skills/helpverified/`
 - Architecture and decisions: `docs/`
 
-**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold) is done; the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
+**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold) and B2 (auth) are done; the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
 
 ## Requirements
 
 - Node 24 (`.nvmrc`)
 - pnpm via corepack: `corepack enable`
-- API: [uv](https://docs.astral.sh/uv/) (installs Python 3.14 itself) and PostgreSQL 16, via Docker or the portable setup below
+- API: [uv](https://docs.astral.sh/uv/) (installs Python 3.14 itself), PostgreSQL 16 and Redis 7, via Docker or the portable setup below
 
 ## Setup
 
@@ -27,15 +27,19 @@ The design-token and component gallery is at http://localhost:3000/styleguide (d
 
 ### API (apps/api)
 
-1. Copy the API section at the bottom of `.env.example` to `apps/api/.env`.
-2. Start PostgreSQL 16 with **one** of these:
+1. Copy the API section at the bottom of `.env.example` to `apps/api/.env`, and set `JWT_SECRET` to a random value (the command is in the comment above it).
+2. Start PostgreSQL 16 and Redis 7 with **one** of these:
    - **Docker:** `docker compose up -d postgres redis`
-   - **No Docker or no admin rights (Windows):** download the EDB "PostgreSQL 16 binaries" zip, unzip it so `%LOCALAPPDATA%\pgsql16\bin\pg_ctl.exe` exists, then from `apps/api`:
-     ```powershell
-     .\scripts\pg-portable.ps1 init    # once: data folder + databases helpverified and helpverified_test
-     .\scripts\pg-portable.ps1 start   # after each reboot (also: stop, status)
-     ```
-     If scripts are blocked, run it as `powershell -ExecutionPolicy Bypass -File .\scripts\pg-portable.ps1 start`.
+   - **No Docker or no admin rights (Windows):**
+     - PostgreSQL: download the EDB "PostgreSQL 16 binaries" zip and unzip it so `%LOCALAPPDATA%\pgsql16\bin\pg_ctl.exe` exists.
+     - Redis: download `Redis-7.4.x-Windows-x64-msys2.zip` from github.com/redis-windows/redis-windows/releases and unzip it so `%LOCALAPPDATA%\redis7\redis-server.exe` exists.
+     - Then from `apps/api`:
+       ```powershell
+       .\scripts\pg-portable.ps1 init       # once: data folder + databases helpverified and helpverified_test
+       .\scripts\pg-portable.ps1 start      # after each reboot (also: stop, status)
+       .\scripts\redis-portable.ps1 start   # after each reboot (also: stop, status)
+       ```
+     If scripts are blocked, run them as `powershell -ExecutionPolicy Bypass -File .\scripts\<script>.ps1 start`.
 3. Then:
    ```bash
    cd apps/api
@@ -43,6 +47,8 @@ The design-token and component gallery is at http://localhost:3000/styleguide (d
    uv run alembic upgrade head
    uv run fastapi dev app/main.py     # http://localhost:8000/health and /docs
    ```
+
+**Emails in development** (verify email, reset password) aren't sent. They're written as JSON files to `apps/api/.outbox/`; open the newest one and follow its `link`. A real provider arrives in B6.
 
 ## Commands
 
@@ -92,7 +98,7 @@ First Playwright run: `pnpm --filter web exec playwright install chromium webkit
 | `uv run fastapi dev app/main.py` | Start the API with reload on http://localhost:8000 |
 | `uv run ruff check . && uv run ruff format --check .` | Lint and formatting |
 | `uv run mypy app tests` | Type check (strict) |
-| `uv run pytest -q` | All tests; database tests skip if PostgreSQL isn't running (CI never skips) |
+| `uv run pytest -q` | All tests; database tests skip if PostgreSQL or Redis isn't running (CI never skips) |
 | `uv run alembic upgrade head` / `downgrade base` | Apply or roll back migrations |
 | `uv run alembic revision -m "<message>"` | New migration (then hand-write triggers, partial indexes and enum changes) |
 
@@ -107,7 +113,8 @@ First Playwright run: `pnpm --filter web exec playwright install chromium webkit
 | `docs/accessibility.md` | What's checked automatically, exceptions, patterns |
 | `docs/bundles.md` | JS per page and the budgets CI enforces |
 | `docs/design-tokens.md`, `docs/asset-inventory.md`, `docs/content.md`, `docs/placeholders.md`, `docs/reference-adaptation.md` | Design system, assets, copy, temporary items, reference sites |
-| `docs/decisions/` | Architecture decision records (ADRs 0001–0010) |
+| `docs/database.md` | What's in the database now: migrations, ERD, rules enforced in SQL |
+| `docs/decisions/` | Architecture decision records (ADRs 0001–0011) |
 | `docs/CHANGELOG.md` | A report per milestone |
 
 ## Brand originals

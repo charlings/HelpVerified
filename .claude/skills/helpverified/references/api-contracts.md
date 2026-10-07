@@ -52,13 +52,13 @@ The web app maps each code to a user-facing message in `apps/web/src/lib/error-m
 | POST | `/auth/signup` | public | `{email, password, full_name, role: family|agency_admin}` → 201, sends verify email |
 | POST | `/auth/login` | public | → `{access_token, user}`, sets refresh cookie |
 | POST | `/auth/refresh` | cookie | rotates, → `{access_token}` |
-| POST | `/auth/logout` | auth | revokes refresh family |
+| POST | `/auth/logout` | refresh cookie | revokes refresh family → 204; no bearer needed (ADR 0011) |
 | POST | `/auth/verify-email` | public | `{token}` → `{verified: true, role}` (role lets the UI route agencies to onboarding) |
 | POST | `/auth/resend-verification` | public | always 202 |
 | POST | `/auth/forgot-password` | public | always 202 |
 | POST | `/auth/reset-password` | public | `{token, password}` |
 | GET | `/auth/google/start`, `/auth/google/callback` | public | OAuth |
-| GET | `/me` | auth | user + role context (agency/family summary) |
+| GET | `/me` | auth | `UserOut`: `{id, email, full_name, role, email_verified, phone, agency: {id, name, status} | null}` |
 | PATCH | `/me` | auth | name, phone |
 
 ### Agencies

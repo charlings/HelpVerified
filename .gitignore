@@ -26,6 +26,7 @@ apps/web/lighthouse/
 specs/frontend/brandfiles/*.jpg
 
 # python (apps/api, from B1)
+apps/api/.outbox/
 __pycache__/
 .venv/
 .pytest_cache/

@@ -44,7 +44,9 @@ users (
   id uuid PK, email citext UNIQUE NOT NULL, password_hash text NULL,   -- NULL for Google-only accounts
   google_sub text UNIQUE NULL, full_name text NOT NULL, phone text NULL,
   role user_role NOT NULL, status account_status NOT NULL DEFAULT 'active',
-  email_verified_at timestamptz NULL, last_login_at timestamptz NULL, created_at, updated_at
+  email_verified_at timestamptz NULL, last_login_at timestamptz NULL,
+  privacy_notice_version text NULL, privacy_accepted_at timestamptz NULL,   -- accepted at signup (B2, ADR 0011)
+  created_at, updated_at
 )
 refresh_tokens (
   id uuid PK, user_id uuid FK users ON DELETE CASCADE, token_hash text UNIQUE NOT NULL,

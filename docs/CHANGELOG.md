@@ -1,5 +1,75 @@
 # Changelog
 
+## B2 — Auth (2026-10-07)
+
+### 1. Objective
+Real accounts and sessions behind the endpoints the frontend's mock already defines: sign-up, sign-in, refresh rotation with reuse detection, logout, email verification, password reset, `/me`, role and verified-email guards, and Redis rate limits. Google sign-in is deferred to its own stage (owner decision, ADR 0011).
+
+### 2. Files created
+- `app/core/security.py` (argon2id, common-password check, JWT, opaque tokens and their hashes), `app/core/common_passwords.txt`
+- `app/core/deps.py`: `get_db`, `get_current_user`, `require_role`, `require_verified_email`, service factories
+- `app/core/rate_limit.py`: Redis sliding window (atomic Lua script); `app/core/clock.py`
+- `app/integrations/email.py`: `EmailSender` interface, development outbox
+- `app/modules/users/`: `models.py` (`User`, roles, statuses), `repository.py`, `schemas.py` (`UserOut`, `MeUpdate`), `service.py`, `router.py` (`GET`/`PATCH /me`)
+- `app/modules/auth/`: `models.py` (refresh and one-time tokens), `repository.py`, `schemas.py`, `service.py`, `emails.py`, `router.py` (8 endpoints)
+- `app/db/models.py` (model registry), migration `20261007_0002_identity.py`, readable copy `app/db/sql/0002_identity.sql`
+- `apps/api/scripts/redis-portable.ps1`
+- Tests: `unit/test_security.py`, `unit/test_auth_emails.py`, `integration/test_auth_accounts.py`, `test_auth_tokens.py`, `test_rate_limits.py`, `test_access_control.py`, `test_log_hygiene.py`, `test_schema_drift.py`; `tests/fakes.py`, `tests/helpers.py`
+- `docs/database.md` (ERD, starting now that there are tables), `docs/decisions/0011-b2-auth-choices.md`
+
+### 3. Files modified
+- `app/main.py`: lifespan owns the engine, Redis and email sender; routers under `/api/v1`
+- `app/core/config.py`: B2 settings (Redis, JWT, token lifetimes, rate limits, email); outbox refused when deployed
+- `app/core/errors.py`, `error_handlers.py`: `RateLimited` carries `Retry-After`
+- `app/db/base.py`: timestamp mixins; `app/db/session.py`: engine and sessionmaker factories (no globals); `migrations/env.py`: loads every model
+- `tests/conftest.py`: Postgres and Redis fixtures, a clean state per test, shared helper connection pool; `integration/test_migrations.py`: covers the new tables, types and trigger
+- `pyproject.toml` / `uv.lock`: argon2-cffi, PyJWT, redis, time-machine; test-only ignores for fake passwords
+- `.env.example`: B2 keys; `.gitignore`: `apps/api/.outbox/`
+- `.github/workflows/ci.yml`: Redis service, per-run random `JWT_SECRET`
+- `README.md`, `CLAUDE.md`: Redis setup, outbox, status
+- `.claude/skills/helpverified/references/database.md` (privacy columns), `api-contracts.md` (logout via cookie, `UserOut` shape)
+
+### 4. Key decisions
+ADR 0011: Google deferred; portable Redis 7.4 on both loopbacks; dev email outbox (refused when deployed); logout needs only the cookie; Origin check on cookie endpoints; rate limits run before credentials and never count rejected or invalid requests; strict refresh-reuse detection (multi-tab race noted); `UserOut.phone` added; privacy-notice columns; `Secure` cookie when deployed, same-site domains needed in production; resources on `app.state`.
+
+### 5. Tests and checks
+| Check | Result |
+| --- | --- |
+| `ruff check` / `ruff format --check` | Pass, 55 files |
+| `mypy app tests` (strict) | Pass, 55 files |
+| `pytest -q` (real Postgres 16.15 and Redis 7.4.11) | **107 passed**, about 2–3 minutes locally |
+| Migrations | up → down to base → up, with tables, enums and the `updated_at` trigger checked; models match migrations (autogenerate diff is empty) |
+| Live server smoke test | signup 201 → verify link from `.outbox` → login 200 and cookie → `/me` 200 → refresh 200 → logout 204 → refresh 401; server log has no tokens or passwords |
+
+Spec acceptance items covered: refresh-token reuse revokes the chain; reset and verify tokens fail on second use with 410; an unverified email is refused (`require_verified_email`, wired to real endpoints in B3/B4); each rate limit returns 429 with `Retry-After`; logs contain no tokens or passwords; no token → 401 and wrong role → 403 (other-tenant 404 arrives with tenant-owned resources in B3).
+
+### 6. Known issues
+- **Google sign-in isn't built** (deferred, ADR 0011).
+- Two tabs refreshing at the same instant can sign the user out (strict reuse detection). Watch for it in B7.
+- Production needs the web app and API on the same site for the `SameSite=Lax` refresh cookie (B8 checklist).
+- No seed script yet, so a super admin can only be created directly in the database. The seed arrives with the demo data (database.md §8).
+- Each new PostgreSQL connection costs about 0.4 s on this Windows machine (backend process start-up), so the integration suite takes about 2–3 minutes here. CI on Linux will be faster.
+- Starlette's `httpx` → `httpx2` deprecation warning, as in B1.
+
+### 7. Assumptions
+- `privacy_notice_version` is stored as sent (1–64 characters); the server doesn't keep a list of valid versions.
+- Each refresh rotation grants a fresh 14 days, so the session slides and has no absolute lifetime.
+
+### 8. Acceptance criteria (B2 row: "Signup/login/refresh/logout/verify/reset/Google, `require_role`, rate limits; 401/403/404 matrix and token tests pass")
+| Item | Result |
+| --- | --- |
+| Signup, login, refresh, logout, verify, reset | **Met** |
+| Google | **Deferred** by the owner (ADR 0011) |
+| `require_role`, `require_verified_email` | **Met** (probe-route tests) |
+| Rate limits | **Met** (all three, with `Retry-After`) |
+| 401/403 matrix | **Met** for `/me` and the guards; 404 for other tenants starts in B3 |
+| Token tests | **Met** (rotation, reuse, expiry, single use) |
+
+### 9. Recommended next step
+B3 (Agencies, workers, verification): agency onboarding and approval, NIN hashing, the four checks, Cloudinary signing and registration, document URLs with the access log, and the listing-gate trigger. B3 needs Cloudinary credentials (a free account works; test uploads only).
+
+**Signed off by the owner 2026-10-07.**
+
 ## B1 — Scaffold (2026-10-07)
 
 ### 1. Objective
