@@ -1,0 +1,36 @@
+# Local PostgreSQL 16 and Redis for the API. Development only: credentials match .env.example.
+# No Docker (or no admin rights)? apps/api/scripts/pg-portable.ps1 runs the same Postgres without it.
+#
+#   docker compose up -d postgres redis
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: helpverified
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-helpverified}
+      POSTGRES_DB: helpverified
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./apps/api/scripts/create-test-db.sql:/docker-entrypoint-initdb.d/create-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helpverified -d helpverified"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Used from B2 (rate limits, idempotency keys, job lock).
+  redis:
+    image: redis:7
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

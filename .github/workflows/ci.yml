@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
   pull_request:
 
 concurrency:
@@ -102,6 +102,49 @@ jobs:
           name: lighthouse-reports
           path: apps/web/lighthouse
           retention-days: 14
+
+  api:
+    # B1: lint, types, tests (including the migration round-trip) against a real PostgreSQL 16.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: helpverified
+          POSTGRES_PASSWORD: helpverified
+          POSTGRES_DB: helpverified_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U helpverified"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      APP_ENV: test
+      API_BASE_URL: http://localhost:8000
+      WEB_BASE_URL: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3000
+      DATABASE_URL: postgresql+asyncpg://helpverified:helpverified@localhost:5432/helpverified_test
+      TEST_DATABASE_URL: postgresql+asyncpg://helpverified:helpverified@localhost:5432/helpverified_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy app tests
+      - name: Migrations up, down to base, up (database.md §8)
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+      - run: uv run pytest -q
 
   security:
     runs-on: ubuntu-latest

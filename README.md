@@ -6,13 +6,13 @@ Families in Nigeria hire nannies, drivers and cleaners whose **ID, guarantor, re
 - Working rules for contributors and Claude Code: `CLAUDE.md` and `.claude/skills/helpverified/`
 - Architecture and decisions: `docs/`
 
-**Current phase:** 1 — Frontend, complete (M1–M9). The web app runs on mock data; nothing is connected to a real backend, payments or email yet. Backend work (B1–B8) starts after the owner's sign-off recorded in `docs/frontend-signoff.md`; start with `docs/backend-handoff.md`.
+**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold) is done; the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
 
 ## Requirements
 
 - Node 24 (`.nvmrc`)
 - pnpm via corepack: `corepack enable`
-- Docker and uv (Python) are only needed from backend milestone B1.
+- API: [uv](https://docs.astral.sh/uv/) (installs Python 3.14 itself) and PostgreSQL 16, via Docker or the portable setup below
 
 ## Setup
 
@@ -24,6 +24,25 @@ pnpm dev                                # http://localhost:3000
 ```
 
 The design-token and component gallery is at http://localhost:3000/styleguide (development only).
+
+### API (apps/api)
+
+1. Copy the API section at the bottom of `.env.example` to `apps/api/.env`.
+2. Start PostgreSQL 16 with **one** of these:
+   - **Docker:** `docker compose up -d postgres redis`
+   - **No Docker or no admin rights (Windows):** download the EDB "PostgreSQL 16 binaries" zip, unzip it so `%LOCALAPPDATA%\pgsql16\bin\pg_ctl.exe` exists, then from `apps/api`:
+     ```powershell
+     .\scripts\pg-portable.ps1 init    # once: data folder + databases helpverified and helpverified_test
+     .\scripts\pg-portable.ps1 start   # after each reboot (also: stop, status)
+     ```
+     If scripts are blocked, run it as `powershell -ExecutionPolicy Bypass -File .\scripts\pg-portable.ps1 start`.
+3. Then:
+   ```bash
+   cd apps/api
+   uv sync
+   uv run alembic upgrade head
+   uv run fastapi dev app/main.py     # http://localhost:8000/health and /docs
+   ```
 
 ## Commands
 
@@ -66,6 +85,17 @@ Demo data lives in each browser tab and resets when the tab closes; to see one r
 
 First Playwright run: `pnpm --filter web exec playwright install chromium webkit`.
 
+**API commands** (from `apps/api`):
+
+| Command | What it does |
+| --- | --- |
+| `uv run fastapi dev app/main.py` | Start the API with reload on http://localhost:8000 |
+| `uv run ruff check . && uv run ruff format --check .` | Lint and formatting |
+| `uv run mypy app tests` | Type check (strict) |
+| `uv run pytest -q` | All tests; database tests skip if PostgreSQL isn't running (CI never skips) |
+| `uv run alembic upgrade head` / `downgrade base` | Apply or roll back migrations |
+| `uv run alembic revision -m "<message>"` | New migration (then hand-write triggers, partial indexes and enum changes) |
+
 ## Docs
 
 | Document | What's in it |
@@ -77,7 +107,7 @@ First Playwright run: `pnpm --filter web exec playwright install chromium webkit
 | `docs/accessibility.md` | What's checked automatically, exceptions, patterns |
 | `docs/bundles.md` | JS per page and the budgets CI enforces |
 | `docs/design-tokens.md`, `docs/asset-inventory.md`, `docs/content.md`, `docs/placeholders.md`, `docs/reference-adaptation.md` | Design system, assets, copy, temporary items, reference sites |
-| `docs/decisions/` | Architecture decision records (ADRs 0001–0009) |
+| `docs/decisions/` | Architecture decision records (ADRs 0001–0010) |
 | `docs/CHANGELOG.md` | A report per milestone |
 
 ## Brand originals
@@ -88,7 +118,7 @@ The source logo and photos live in `specs/frontend/brandfiles/`. The photos (14�
 
 ```
 apps/web/            Next.js 15 frontend (see docs/architecture.md)
-apps/api/            FastAPI backend (from B1)
+apps/api/            FastAPI backend (app/core, app/db, app/modules from B2; tests/)
 packages/contracts/  Generated API types (from B7)
 docs/                Architecture, ADRs, route map, tokens, assets, changelog
 specs/               Approved specs and milestone plans

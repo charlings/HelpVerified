@@ -14,11 +14,12 @@ Both are enforced in PostgreSQL (trigger + partial unique index) **and** in one 
 ## Current phase
 
 <!-- Update this block at the start and end of every milestone. -->
-- **Phase:** 1 — Frontend
-- **Milestone:** M9 — Freeze
-- **Status:** Phase 1 frontend complete and signed off by the owner 2026-10-06 (`docs/frontend-signoff.md`; Lighthouse performance still to be confirmed by the CI job). API contract frozen (ADR 0009). **Do not start backend (B1) until the owner explicitly says so.** When they do, read `docs/backend-handoff.md` first. M8 signed off by owner 2026-10-06 (checks in `docs/accessibility.md`). M7 signed off by owner 2026-10-06. M6 signed off by owner 2026-10-05. M5 signed off by owner 2026-10-05. M4 signed off by owner 2026-10-05. M3 complete 2026-10-05; Lighthouse performance ≥ 90 not consistently met locally (CI job added, ADR 0004).
-- **Backend work:** do not start until M9 is signed off by the owner.
-- **Data:** frontend uses MSW mocks (`NEXT_PUBLIC_API_MOCKING=enabled`). Never imply auth or payments are real while mocks are on.
+- **Phase:** 2 — Backend (owner started it 2026-10-07)
+- **Milestone:** B1 — Scaffold, signed off by owner 2026-10-07. Next: B2 — Auth (Redis option for local dev to be decided at B2).
+- **Status:** Phase 1 frontend signed off 2026-10-06 (`docs/frontend-signoff.md`; Lighthouse performance still to be confirmed by the CI job). API contract frozen (ADR 0009). Backend follows `docs/backend-handoff.md`; B1 choices in ADR 0010.
+- **Git:** remote `origin` = https://github.com/charlings/HelpVerified. `main` holds the signed-off frontend. Backend milestones go on `feature/backend`: commit each milestone after the owner signs it off, push the branch, and merge into `main` only when the owner asks.
+- **Local database:** no Docker or admin rights on the owner's machine. PostgreSQL 16 runs from `%LOCALAPPDATA%\pgsql16` via `apps/api/scripts/pg-portable.ps1 start` (start it after each reboot).
+- **Data:** frontend uses MSW mocks (`NEXT_PUBLIC_API_MOCKING=enabled`) until B7. Never imply auth or payments are real while mocks are on.
 
 ## Stack
 
@@ -117,7 +118,7 @@ Run a single test: `pnpm --filter web vitest run path/to/file.test.tsx` or `uv r
 
 ## Do not
 
-- Start backend work before frontend sign-off, or swap any stack choice without an ADR.
+- Swap any stack choice without an ADR.
 - Copy code, text, images or branding from the reference sites (joincolab.io, the Profusion template, the login image). Adapt layout and interaction ideas only.
 - Commit `.env` files, secrets or live Paystack keys. Use test keys outside production.
 - Add carousels, scroll-jacking or autoplaying motion.

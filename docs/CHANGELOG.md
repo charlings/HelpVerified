@@ -1,5 +1,71 @@
 # Changelog
 
+## B1 — Scaffold (2026-10-07)
+
+### 1. Objective
+Start Phase 2 with a FastAPI app that runs, documents itself, logs in JSON with a request ID, returns every error in the contract envelope, refuses to start with missing settings, and has an Alembic baseline that migrates up, down and up again, locally and in CI.
+
+### 2. Files created
+- `apps/api/pyproject.toml`, `uv.lock`, `.python-version`: Python 3.14, FastAPI 0.142, SQLAlchemy 2.1 (asyncpg), Alembic 1.20, pydantic-settings, structlog; ruff, mypy (strict), pytest
+- `app/main.py`: `create_app()`, CORS, middleware, error handlers, `GET /health`
+- `app/core/config.py`: settings, fail-fast `MissingSettingsError` naming each bad key
+- `app/core/errors.py`: `DomainError` hierarchy, one class per contract code, no HTTP imports
+- `app/core/error_handlers.py`: domain, framework, validation and unhandled errors turned into the envelope
+- `app/core/middleware.py`: request ID (from `X-Request-ID` or generated) plus access log; 1 MB body limit
+- `app/core/logging.py`: structlog JSON
+- `app/db/base.py` (naming convention), `app/db/session.py` (engine, `get_db`)
+- `alembic.ini`, `app/db/migrations/env.py` (async), `script.py.mako`, `versions/20261007_0001_baseline.py` (`pgcrypto`, `citext`, `set_updated_at()`); readable copy `app/db/sql/0001_baseline.sql`
+- `tests/`: health, CORS, error envelope (parametrised), config fail-fast, error codes vs the web contract, layer-import rules, migration round-trip
+- `apps/api/scripts/pg-portable.ps1`: PostgreSQL 16 without Docker or admin rights; `scripts/create-test-db.sql`
+- `docker-compose.yml`: Postgres 16 and Redis 7, bound to localhost
+- `docs/decisions/0010-b1-scaffold-choices.md`
+
+### 3. Files modified
+- `.env.example`: API section added (its comment said B1 would add it)
+- `.github/workflows/ci.yml`: new `api` job (ruff, format, mypy, migration up/down/up, pytest) with a Postgres 16 service
+- `README.md`: API setup with and without Docker, API commands, current phase, branch workflow
+- `CLAUDE.md`: current phase is now B1; git workflow (`feature/backend`); local database note; removed the "don't start backend" rule, which is now met
+
+### 4. Key decisions
+ADR 0010: Python 3.14; settings keys added per milestone; framework errors keep their HTTP status with the nearest contract code (405/413 use `BAD_REQUEST`, no new codes); error codes tested against the web mock; layer rules enforced by a test; `/health` is liveness only; portable Postgres for machines without admin rights.
+
+### 5. Tests and checks
+| Check | Result |
+| --- | --- |
+| `uv run ruff check .` / `ruff format --check .` | Pass |
+| `uv run mypy app tests` (strict) | Pass |
+| `uv run pytest -q` | 36 passed, 1 skipped (layer-rule test has no modules to check until B2) |
+| Migration round-trip, pytest and Alembic CLI | `upgrade head → downgrade base → upgrade head` pass on PostgreSQL 16.15 |
+| Live server (`fastapi run`) | `/health` 200, `/docs` 200, unknown route returns the 404 envelope, access log is JSON with `request_id` |
+| Clean copy (no `.venv`/`.env`, `uv sync --locked`, README steps) | Migrate, lint, types and tests pass |
+| DB test with Postgres stopped | Skips locally; fails in CI by design |
+
+### 6. Known issues
+- Starlette warns that its test client will move from `httpx` to `httpx2`. It's harmless for now; switch when FastAPI's `TestClient` does.
+- `docs/database.md` (the ERD) doesn't exist yet. The baseline has no tables, so it starts in B2 with the first tables.
+- Local Postgres must be started after each reboot (`pg-portable.ps1 start`).
+- The repository was re-initialised after B1 was first committed, which lost the original B1 commit. B1 was restored file for file on `feature/backend` and all checks were re-run.
+
+### 7. Assumptions
+- Dev credentials `helpverified`/`helpverified` are local-only (bound to localhost) and never used outside development and CI.
+- Render's managed Postgres allows `pgcrypto` and `citext` (both are on its supported list). Confirm at B8.
+
+### 8. Acceptance criteria
+| Item (testing-and-milestones.md §5) | Result |
+| --- | --- |
+| `/health` 200 | **Met** |
+| `/docs` loads | **Met** |
+| Migration up/down/up in CI | **Met locally** (pytest and CLI); CI runs on push of `feature/backend` |
+| Empty test passes (and more) | **Met**: 36 tests |
+| Spec: removing a required env var stops startup with a named error | **Met** (`test_config.py`, every key) |
+| Spec: every error path returns the envelope with `request_id`; unhandled → generic 500 | **Met** (`test_errors.py`) |
+| Spec: architecture test for router, service and repository imports | **Met** (in place; enforces from B2 when modules exist) |
+
+### 9. Recommended next step
+B2 (Auth): users and refresh-token tables, argon2id, JWT, verify and reset tokens, `require_role`, and Redis rate limits. B2 needs Redis locally: a portable Windows build, Upstash, or a fake Redis in tests (to be decided at B2).
+
+**Signed off by the owner 2026-10-07.**
+
 ## Phase 1 summary — Frontend complete (2026-10-06)
 
 Nine milestones took HelpVerified's frontend from an empty repo to a finished, verified app running on a mock API that enforces the real business rules.
