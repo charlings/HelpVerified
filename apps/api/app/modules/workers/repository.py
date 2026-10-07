@@ -3,7 +3,7 @@ the listing gate (P0001, hint WORKER_NOT_VERIFIED) and a duplicate NIN (uq_worke
 
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,7 @@ from app.core.errors import DuplicateWorker, WorkerNotVerified
 from app.core.pagination import PageParams
 from app.db.errors import pg_error
 from app.modules.agencies.models import Agency, WorkerRole
+from app.modules.placements.models import ACTIVE, Placement
 from app.modules.verification.models import KINDS, VerificationItem
 from app.modules.workers.models import ListingStatus, Worker
 
@@ -29,6 +30,14 @@ class WorkerRepository:
         """Another agency's worker is "not found", so IDs can't be probed (backend.md §2)."""
         query = select(Worker).where(Worker.id == worker_id, Worker.agency_id == agency_id)
         return await self.session.scalar(query.with_for_update() if for_update else query)
+
+    async def count_listed(self) -> int:
+        return (
+            await self.session.scalar(
+                select(func.count()).select_from(Worker).where(Worker.listing_status == ListingStatus.listed)
+            )
+            or 0
+        )
 
     async def nin_exists(self, nin_hash: str) -> bool:
         return await self.session.scalar(select(func.count()).where(Worker.nin_hash == nin_hash)) != 0
@@ -64,14 +73,17 @@ class WorkerRepository:
         agency_id: uuid.UUID | None = None,
         role: WorkerRole | None = None,
         listing_status: ListingStatus | None = None,
+        available: bool | None = None,
         order_by_name: bool = False,
     ) -> tuple[list[tuple[Worker, Agency]], int]:
         query = select(Worker, Agency).join(Agency, Agency.id == Worker.agency_id)
         count = select(func.count()).select_from(Worker)
+        placed = exists().where(Placement.worker_id == Worker.id, Placement.status.in_(ACTIVE))
         for condition in (
             Worker.agency_id == agency_id if agency_id else None,
             Worker.role == role if role else None,
             Worker.listing_status == listing_status if listing_status else None,
+            None if available is None else (~placed if available else placed),
         ):
             if condition is not None:
                 query = query.where(condition)

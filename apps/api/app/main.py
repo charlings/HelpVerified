@@ -5,6 +5,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,15 +14,20 @@ from redis.asyncio import Redis
 
 from app.core.config import Settings, get_settings
 from app.core.error_handlers import register_error_handlers
+from app.core.idempotency import IdempotencyStore
 from app.core.logging import configure_logging
 from app.core.middleware import BodySizeLimitMiddleware, RequestContextMiddleware
 from app.core.rate_limit import RateLimiter
 from app.db.session import create_engine, create_sessionmaker
 from app.integrations.cloudinary import Cloudinary, CloudinaryClient
 from app.integrations.email import EmailSender, OutboxEmailSender
+from app.integrations.payments import PaymentGateway, UnconfiguredPayments
 from app.modules.admin.router import router as admin_router
 from app.modules.agencies.router import router as agencies_router
 from app.modules.auth.router import router as auth_router
+from app.modules.families.router import router as families_router
+from app.modules.placements.router import router as placements_router
+from app.modules.requests.router import router as requests_router
 from app.modules.users.router import router as users_router
 from app.modules.verification.router import router as verification_router
 from app.modules.workers.router import router as workers_router
@@ -37,6 +43,7 @@ def create_app(
     settings: Settings | None = None,
     email_sender: EmailSender | None = None,
     cloudinary: Cloudinary | None = None,
+    payments: PaymentGateway | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.LOG_LEVEL)
@@ -47,6 +54,8 @@ def create_app(
         redis = Redis.from_url(str(settings.REDIS_URL))
         app.state.sessionmaker = create_sessionmaker(engine)
         app.state.rate_limiter = RateLimiter(redis)
+        app.state.idempotency = IdempotencyStore(redis, timedelta(hours=settings.IDEMPOTENCY_TTL_HOURS))
+        app.state.payments = payments or UnconfiguredPayments()  # Paystack arrives in B5
         app.state.email_sender = email_sender or OutboxEmailSender(
             settings.EMAIL_OUTBOX_DIR, settings.EMAIL_FROM
         )
@@ -93,6 +102,9 @@ def create_app(
         agencies_router,
         workers_router,
         verification_router,
+        requests_router,
+        placements_router,
+        families_router,
         admin_router,
     ):
         app.include_router(router, prefix=API_PREFIX)

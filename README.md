@@ -6,7 +6,7 @@ Families in Nigeria hire nannies, drivers and cleaners whose **ID, guarantor, re
 - Working rules for contributors and Claude Code: `CLAUDE.md` and `.claude/skills/helpverified/`
 - Architecture and decisions: `docs/`
 
-**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold), B2 (auth) and B3 (agencies, workers, verification) are done; the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
+**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold), B2 (auth), B3 (agencies, workers, verification) and B4 (requests, proposals, placements) are done; the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
 
 ## Requirements
 
@@ -99,6 +99,7 @@ First Playwright run: `pnpm --filter web exec playwright install chromium webkit
 | `uv run ruff check . && uv run ruff format --check .` | Lint and formatting |
 | `uv run mypy app tests` | Type check (strict) |
 | `uv run pytest -q` | All tests; database tests skip if PostgreSQL or Redis isn't running (CI never skips) |
+| `uv run pytest tests/concurrency -q` | Rule 2 under real concurrency (needs PostgreSQL) |
 | `uv run alembic upgrade head` / `downgrade base` | Apply or roll back migrations |
 | `uv run alembic revision -m "<message>"` | New migration (then hand-write triggers, partial indexes and enum changes) |
 
@@ -114,7 +115,7 @@ First Playwright run: `pnpm --filter web exec playwright install chromium webkit
 | `docs/bundles.md` | JS per page and the budgets CI enforces |
 | `docs/design-tokens.md`, `docs/asset-inventory.md`, `docs/content.md`, `docs/placeholders.md`, `docs/reference-adaptation.md` | Design system, assets, copy, temporary items, reference sites |
 | `docs/database.md` | What's in the database now: migrations, ERD, rules enforced in SQL |
-| `docs/decisions/` | Architecture decision records (ADRs 0001–0012) |
+| `docs/decisions/` | Architecture decision records (ADRs 0001–0013) |
 | `docs/CHANGELOG.md` | A report per milestone |
 
 ## Brand originals

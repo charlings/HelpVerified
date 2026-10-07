@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 
 from app.integrations.cloudinary import Asset, SignedUpload, sign
 from app.integrations.email import EmailMessage
+from app.integrations.payments import Checkout
 
 FAKE_DOWNLOAD_HOST = "https://fake-cloudinary.test"
 
@@ -64,6 +65,18 @@ class MemoryEmailSender:
         link = self.last(kind, to).link
         assert link is not None
         return link.split("token=", 1)[1]
+
+
+class FakePayments:
+    """Hands out a checkout link per placement, as Paystack will (B5)."""
+
+    def __init__(self) -> None:
+        self.started: list[uuid.UUID] = []
+
+    async def start_placement_checkout(self, placement_id: uuid.UUID, payer_email: str) -> Checkout:
+        self.started.append(placement_id)
+        reference = f"HV-PF-{placement_id.hex[:8].upper()}"
+        return Checkout(authorization_url=f"https://checkout.test/{reference}", reference=reference)
 
 
 class FailingEmailSender:

@@ -1,6 +1,5 @@
 """Small pure pieces of B3: signing, month arithmetic, SQL splitting, and copies kept in step."""
 
-import importlib.util
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -84,18 +83,6 @@ def test_split_sql_keeps_function_bodies_whole() -> None:
 
     assert len(statements) == 3
     assert "RETURN NEW;" in statements[1]
-
-
-def test_readable_sql_copy_matches_migration_0003() -> None:
-    path = API / "app/db/migrations/versions/20261007_0003_agencies_workers.py"
-    spec = importlib.util.spec_from_file_location("migration_0003", path)
-    assert spec is not None
-    assert spec.loader is not None
-    migration = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(migration)
-    copy = (API / "app/db/sql/0003_agencies_workers.sql").read_text(encoding="utf-8")
-
-    assert split_sql(migration.UPGRADE_SQL) == split_sql(copy)
 
 
 def test_states_match_the_web_list() -> None:

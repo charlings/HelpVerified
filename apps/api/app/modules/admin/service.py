@@ -2,17 +2,20 @@
 
 Agency moves: pending → approved | rejected, approved → suspended, suspended → approved (reinstate).
 Rejected is final. A move that's no longer legal (someone acted first) is 409 ILLEGAL_TRANSITION.
-Suspending sets listed workers to `suspended`; reinstating returns them to `delisted`, so the agency
-relists them through the four-check gate. Active placements keep running (B4 adds withdrawing proposals).
+Suspending sets listed workers to `suspended` and withdraws the agency's pending proposals; reinstating
+returns those workers to `delisted`, so the agency relists them through the four-check gate. Active
+placements keep running.
 """
 
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import utcnow
 from app.core.config import Settings
+from app.core.dates import lagos_date
 from app.core.errors import IllegalTransition, NotFound, ValidationFailed
 from app.core.pagination import PageParams
 from app.modules.admin.models import AuditAction
@@ -20,6 +23,7 @@ from app.modules.admin.repository import AuditRepository
 from app.modules.admin.schemas import (
     AdminAgencyDetail,
     AdminAgencySummary,
+    AdminOverview,
     AdminWorkerDetail,
     AgencyAction,
     AgencyAdmin,
@@ -28,6 +32,8 @@ from app.modules.admin.schemas import (
 from app.modules.agencies.models import Agency, AgencyStatus, WorkerRole
 from app.modules.agencies.repository import AgencyRepository
 from app.modules.agencies.schemas import SubscriptionOut, WorkerCounts
+from app.modules.placements.repository import PlacementRepository
+from app.modules.requests.repository import RequestRepository
 from app.modules.users.models import User
 from app.modules.verification.repository import VerificationRepository
 from app.modules.verification.schemas import ItemOut
@@ -35,6 +41,8 @@ from app.modules.workers.models import ListingStatus
 from app.modules.workers.repository import WorkerRepository
 from app.modules.workers.schemas import AdminWorkerOut
 from app.modules.workers.service import photo_url
+
+TRIALS_ENDING_SOON_DAYS = 3  # as the web mock's overview counts them
 
 
 @dataclass(frozen=True)
@@ -73,6 +81,25 @@ class AdminService:
         self.workers = WorkerRepository(session)
         self.checks = VerificationRepository(session)
         self.audit = AuditRepository(session)
+        self.placements = PlacementRepository(session)
+        self.requests = RequestRepository(session)
+
+    async def overview(self) -> AdminOverview:
+        """The admin home: counts, the approval queue (oldest first) and the latest audit entries."""
+        soon = lagos_date(utcnow()) + timedelta(days=TRIALS_ENDING_SOON_DAYS)
+        async with self.session.begin():
+            pending = await self.agencies.pending_oldest_first()
+            totals = {agency.id: await self.agencies.worker_counts(agency.id) for agency in pending}
+            recent, _ = await self.audit.page(PageParams(page=1, page_size=5))
+            return AdminOverview(
+                agencies_pending=len(pending),
+                workers_listed=await self.workers.count_listed(),
+                placements_active=await self.placements.count_active(),
+                trials_ending_soon=len(await self.placements.trials_ending(soon)),
+                fees_paid_this_month_kobo=0,  # payments arrive in B5
+                pending_agencies=[AdminAgencySummary.of(a, totals[a.id]["total"]) for a in pending],
+                recent_audit=[AuditEntry.of(entry, actor) for entry, actor in recent],
+            )
 
     # Agencies
 
@@ -116,6 +143,7 @@ class AdminService:
                 await self.agencies.set_workers_status(
                     agency.id, ListingStatus.listed, ListingStatus.suspended
                 )
+                await self.requests.withdraw_pending_for_agency(agency.id)
             elif action == "reinstate":
                 await self.agencies.set_workers_status(
                     agency.id, ListingStatus.suspended, ListingStatus.delisted
@@ -151,7 +179,7 @@ class AdminService:
                 else None
             ),
             workers=WorkerCounts(**counts),
-            active_placements=0,  # placements arrive in B4
+            active_placements=await self.placements.count_active(agency.id),
             history=[AuditEntry.of(entry, actor) for entry, actor in history],
             allowed_actions=allowed_actions(agency),
         )
@@ -169,8 +197,10 @@ class AdminService:
             rows, total = await self.workers.page(
                 params, agency_id=agency_id, role=role, listing_status=listing_status, order_by_name=True
             )
-            statuses = await self.checks.statuses([w.id for w, _ in rows])
-        return [AdminWorkerOut.with_agency(w, a, statuses[w.id]) for w, a in rows], total
+            ids = [w.id for w, _ in rows]
+            statuses = await self.checks.statuses(ids)
+            active = await self.placements.active_for_workers(ids)
+        return [AdminWorkerOut.with_agency(w, a, statuses[w.id], active.get(w.id)) for w, a in rows], total
 
     async def worker_detail(self, worker_id: uuid.UUID) -> AdminWorkerDetail:
         async with self.session.begin():
@@ -185,7 +215,8 @@ class AdminService:
         items = await self.checks.items(worker.id)
         documents = await self.checks.documents([i.id for i in items])
         statuses = {i.kind.value: i.status.value for i in items}
-        base = AdminWorkerOut.with_agency(worker, agency, statuses)
+        active = await self.placements.active_for_worker(worker.id)
+        base = AdminWorkerOut.with_agency(worker, agency, statuses, active)
         detail = AdminWorkerDetail(
             **base.model_dump(), checks=[ItemOut.of(i, documents[i.id]) for i in items]
         )

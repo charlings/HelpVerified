@@ -7,6 +7,7 @@ PostgreSQL 16. Migrations in `apps/api/app/db/migrations/versions/`, with readab
 | `0001` baseline | B1 | Extensions `pgcrypto` and `citext`; `set_updated_at()` trigger function |
 | `0002` identity | B2 | `user_role`, `account_status` enums; `users`, `refresh_tokens`, `one_time_tokens` |
 | `0003` agencies, workers | B3 | Six enums; `agencies`, `agency_members`, `subscriptions`, `workers`, `verification_items`, `verification_documents`, `document_access_log`, `audit_log`; **rule 1 triggers** |
+| `0004` requests, placements | B4 | Five enums; `families`, `requests`, `proposals`, `placements`, `placement_events`, `replacement_requests`; **rule 2 index** |
 
 ## Entity-relationship diagram
 
@@ -22,6 +23,63 @@ erDiagram
     verification_items ||--o{ verification_documents : "evidenced by"
     verification_documents ||--o{ document_access_log : "viewed in"
     users ||--o{ audit_log : "acts in"
+    users ||--o| families : "is"
+    families ||--o{ requests : posts
+    requests ||--o{ proposals : receives
+    workers ||--o{ proposals : "offered in"
+    proposals ||--o| placements : "accepted as"
+    workers ||--o{ placements : "works in (one active)"
+    placements ||--|{ placement_events : "history"
+    placements ||--o{ replacement_requests : "replaced via"
+    replacement_requests |o--o| requests : "opens"
+
+    families {
+        uuid id PK
+        uuid user_id FK,UK
+        text name "surname family"
+    }
+    requests {
+        uuid id PK
+        uuid family_id FK
+        worker_role role
+        date start_date
+        smallint trial_days "7 to 30"
+        request_status status "open | matched | cancelled | closed"
+        uuid replaces_placement_id FK "replacement copies"
+    }
+    proposals {
+        uuid id PK
+        uuid request_id FK
+        uuid worker_id FK
+        uuid agency_id FK
+        proposal_status status "pending | accepted | declined | withdrawn | superseded"
+    }
+    placements {
+        uuid id PK
+        uuid worker_id FK "one active per worker"
+        uuid request_id FK "one active per request"
+        uuid proposal_id FK,UK
+        placement_status status "pending_payment | trial | confirmed | ended | cancelled"
+        timestamptz hold_expires_at "pending_payment only"
+        date trial_starts_on
+        date trial_ends_on
+        timestamptz confirmed_at
+        placement_end_reason end_reason
+        smallint replacements_used
+    }
+    placement_events {
+        bigint id PK
+        uuid placement_id FK
+        placement_status from_status "null on creation"
+        placement_status to_status
+        uuid actor_id FK "null: system"
+    }
+    replacement_requests {
+        uuid id PK
+        uuid placement_id FK
+        uuid new_request_id FK
+        replacement_status status
+    }
 
     users {
         uuid id PK
@@ -118,5 +176,8 @@ erDiagram
 | One agency per CAC number | `uq_agencies_cac_number` (stored normalised) |
 | Only token hashes stored | `token_hash` columns |
 | `updated_at` is always current | `<table>_set_updated_at` triggers |
-
-Rule 2 (one active placement per worker) arrives with `placements` in B4.
+| **Rule 2: one active placement per worker** | Partial unique index `placements_one_active_per_worker` (status in pending_payment, trial, confirmed); the accept transaction locks the worker row first; a violation maps to 409 `WORKER_UNAVAILABLE` |
+| A request is filled at most once at a time | Partial unique index `placements_one_active_per_request` |
+| A placement is consistent with its status | `ck_placements_hold`, `ck_placements_trial_dates`, `ck_placements_confirmed_at`, `ck_placements_end_fields` |
+| One proposal per worker per request | `uq_proposals_request_id_worker_id` (a withdrawn proposal is reused when re-proposed) |
+| Trials last 7 to 30 days | `ck_requests_trial_days` |

@@ -15,7 +15,7 @@ Both are enforced in PostgreSQL (trigger + partial unique index) **and** in one 
 
 <!-- Update this block at the start and end of every milestone. -->
 - **Phase:** 2 — Backend (owner started it 2026-10-07)
-- **Milestone:** B3 — Agencies, workers, verification, signed off by owner 2026-10-07 (live Cloudinary check passed). Rule 1 is enforced (ADR 0012). B2 signed off 2026-10-07 (Google deferred, ADR 0011). B1 signed off 2026-10-07. Next: B4 — Requests, proposals, placements (rule 2).
+- **Milestone:** B4 — Requests, proposals, placements, signed off by owner 2026-10-07. Rule 2 is enforced (index + locked accept + concurrency test, ADR 0013); accept answers 502 until B5 adds Paystack. B3 signed off 2026-10-07 (rule 1, ADR 0012). B2 signed off 2026-10-07 (Google deferred, ADR 0011). B1 signed off 2026-10-07. Next: B5 — Payments (Paystack).
 - **Status:** Phase 1 frontend signed off 2026-10-06 (`docs/frontend-signoff.md`; Lighthouse performance still to be confirmed by the CI job). API contract frozen (ADR 0009). Backend follows `docs/backend-handoff.md`; B1 choices in ADR 0010.
 - **Git:** remote `origin` = https://github.com/charlings/HelpVerified. `main` holds the signed-off frontend. Backend milestones go on `feature/backend`: commit each milestone after the owner signs it off, push the branch, and merge into `main` only when the owner asks.
 - **Local services:** no Docker or admin rights on the owner's machine. PostgreSQL 16 runs from `%LOCALAPPDATA%\pgsql16` (`apps/api/scripts/pg-portable.ps1 start`) and Redis 7.4 from `%LOCALAPPDATA%\redis7` (`apps/api/scripts/redis-portable.ps1 start`); start both after each reboot. Tests use `127.0.0.1`, not `localhost` (Windows IPv6 fallback costs ~2 s per connection).
@@ -126,10 +126,11 @@ Run a single test: `pnpm --filter web vitest run path/to/file.test.tsx` or `uv r
 
 ## Open decisions (owner to confirm)
 
-- Placement fee charged at accept (current default, uses the `pending_payment` hold) or at confirmation.
 - Trial length (default 14 days), replacement window (30 days after confirmation) and free replacements (1).
 - Brand fonts (proposed: Plus Jakarta Sans + Inter) and a white logo variant for dark backgrounds.
 - Licences for Photo1–3 (treated as temporary until confirmed).
 - Paystack test vs live mode for the demo.
 
 When the owner decides one of these, update config, the ADR, the tests and this list together.
+
+Decided: the placement fee is charged **at accept**, using the 30-minute `pending_payment` hold (owner, 2026-10-07; ADR 0013).

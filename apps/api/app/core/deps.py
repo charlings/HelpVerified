@@ -16,14 +16,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import utcnow
 from app.core.config import Settings
 from app.core.errors import EmailNotVerified, Forbidden, Unauthenticated
+from app.core.idempotency import IdempotencyStore
 from app.core.rate_limit import RateLimiter
 from app.core.security import decode_access_token
 from app.integrations.cloudinary import Cloudinary
 from app.integrations.email import EmailSender
+from app.integrations.payments import PaymentGateway
 from app.modules.admin.service import AdminService
 from app.modules.agencies.models import Agency
 from app.modules.agencies.service import AgencyService
 from app.modules.auth.service import AuthService
+from app.modules.families.service import FamilyService
+from app.modules.placements.service import PlacementService
+from app.modules.requests.service import RequestService
 from app.modules.users.models import User, UserRole
 from app.modules.users.service import UserService
 from app.modules.verification.service import VerificationService
@@ -71,8 +76,8 @@ def get_cloudinary(request: Request) -> Cloudinary:
     return cloudinary
 
 
-def get_agency_service(session: SessionDep) -> AgencyService:
-    return AgencyService(session)
+def get_agency_service(session: SessionDep, settings: SettingsDep) -> AgencyService:
+    return AgencyService(session, settings)
 
 
 def get_worker_service(session: SessionDep, settings: SettingsDep) -> WorkerService:
@@ -87,6 +92,36 @@ def get_verification_service(
 
 def get_admin_service(session: SessionDep, settings: SettingsDep) -> AdminService:
     return AdminService(session, settings)
+
+
+def get_payments(request: Request) -> PaymentGateway:
+    payments: PaymentGateway = request.app.state.payments
+    return payments
+
+
+def get_idempotency(request: Request) -> IdempotencyStore:
+    store: IdempotencyStore = request.app.state.idempotency
+    return store
+
+
+def get_request_service(session: SessionDep) -> RequestService:
+    return RequestService(session)
+
+
+def get_placement_service(
+    session: SessionDep, settings: SettingsDep, payments: Annotated[PaymentGateway, Depends(get_payments)]
+) -> PlacementService:
+    return PlacementService(session, settings, payments)
+
+
+def get_family_service(session: SessionDep, settings: SettingsDep) -> FamilyService:
+    return FamilyService(session, settings)
+
+
+RequestServiceDep = Annotated[RequestService, Depends(get_request_service)]
+PlacementServiceDep = Annotated[PlacementService, Depends(get_placement_service)]
+FamilyServiceDep = Annotated[FamilyService, Depends(get_family_service)]
+IdempotencyDep = Annotated[IdempotencyStore, Depends(get_idempotency)]
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
@@ -147,6 +182,7 @@ async def require_verified_email(user: CurrentUser) -> User:
 
 VerifiedUser = Annotated[User, Depends(require_verified_email)]
 AdminUser = Annotated[User, Depends(require_role(UserRole.super_admin))]
+FamilyUser = Annotated[User, Depends(require_role(UserRole.family))]
 
 
 async def get_current_agency(user: CurrentUser, agencies: AgencyServiceDep) -> Agency:

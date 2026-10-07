@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.core.validation import Reason
 from app.modules.admin.models import AuditLog
@@ -93,6 +93,16 @@ class AdminAgencyDetail(AdminAgencySummary):
     active_placements: int
     history: list[AuditEntry]
     allowed_actions: list[AgencyAction]
+
+
+class AdminOverview(BaseModel):
+    agencies_pending: int
+    workers_listed: int
+    placements_active: int
+    trials_ending_soon: int = Field(description="Trials ending within the next 3 days")
+    fees_paid_this_month_kobo: int = Field(description="Placement fees paid this month (from B5)")
+    pending_agencies: list[AdminAgencySummary]
+    recent_audit: list[AuditEntry]
 
 
 class AgencyActionIn(BaseModel):

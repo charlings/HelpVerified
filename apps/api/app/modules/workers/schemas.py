@@ -2,7 +2,7 @@
 Responses never include the NIN hash; only the last 4 digits."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -18,6 +18,7 @@ from pydantic_core import PydanticCustomError
 
 from app.core.validation import Lga, NigerianState
 from app.modules.agencies.models import Agency
+from app.modules.placements.models import Placement
 from app.modules.workers.models import Worker
 
 RoleName = Literal["nanny", "driver", "cleaner"]
@@ -85,7 +86,7 @@ class WorkerUpdate(BaseModel):
 class ActivePlacement(BaseModel):
     id: uuid.UUID
     status: Literal["pending_payment", "trial", "confirmed"]
-    trial_ends_on: str | None
+    trial_ends_on: date | None
 
 
 class Verification(BaseModel):
@@ -111,14 +112,20 @@ class WorkerOut(BaseModel):
     nin_last4: str
     listing_status: ListingName
     listed_at: datetime | None
-    available: bool = Field(description="No active placement (placements arrive in B4)")
+    available: bool = Field(description="No active placement (rule 2)")
     active_placement: ActivePlacement | None
     verification: Verification
     verified_count: int
     created_at: datetime
 
     @classmethod
-    def of(cls, worker: Worker, statuses: dict[str, str], photo_url: str | None = None) -> WorkerOut:
+    def of(
+        cls,
+        worker: Worker,
+        statuses: dict[str, str],
+        photo_url: str | None = None,
+        active: Placement | None = None,
+    ) -> WorkerOut:
         return cls(
             id=worker.id,
             full_name=worker.full_name,
@@ -135,8 +142,14 @@ class WorkerOut(BaseModel):
             nin_last4=worker.nin_last4,
             listing_status=worker.listing_status.value,
             listed_at=worker.listed_at,
-            available=True,
-            active_placement=None,
+            available=active is None,
+            active_placement=ActivePlacement(
+                id=active.id,
+                status=active.status.value,
+                trial_ends_on=active.trial_ends_on,
+            )
+            if active
+            else None,
             verification=Verification.model_validate(statuses),
             verified_count=sum(1 for s in statuses.values() if s == "verified"),
             created_at=worker.created_at,
@@ -152,7 +165,10 @@ class AdminWorkerOut(WorkerOut):
     agency: AgencyRef
 
     @classmethod
-    def with_agency(cls, worker: Worker, agency: Agency, statuses: dict[str, str]) -> AdminWorkerOut:
+    def with_agency(
+        cls, worker: Worker, agency: Agency, statuses: dict[str, str], active: Placement | None = None
+    ) -> AdminWorkerOut:
         return cls(
-            **WorkerOut.of(worker, statuses).model_dump(), agency=AgencyRef(id=agency.id, name=agency.name)
+            **WorkerOut.of(worker, statuses, active=active).model_dump(),
+            agency=AgencyRef(id=agency.id, name=agency.name),
         )

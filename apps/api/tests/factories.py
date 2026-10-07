@@ -83,6 +83,86 @@ def create_worker(
     return worker_id
 
 
+def listed_worker(agency_id: uuid.UUID, **kwargs: str) -> uuid.UUID:
+    """A worker with all four checks verified and listed (through the gate trigger)."""
+    worker_id = create_worker(agency_id, **kwargs)
+    set_items(worker_id, "verified")
+    run_sql("UPDATE workers SET listing_status = 'listed' WHERE id = :id", id=worker_id)
+    return worker_id
+
+
+def create_family(email: str | None = None, *, name: str = "Okafor family") -> uuid.UUID:
+    """A family user (email verified) and their family row."""
+    user_id = create_user(email or f"family-{uuid.uuid4().hex[:8]}@example.com", role="family")
+    family_id = uuid.uuid4()
+    run_sql(
+        "INSERT INTO families (id, user_id, name, state, lga) VALUES (:id, :u, :n, 'Lagos', 'Ikeja')",
+        id=family_id,
+        u=user_id,
+        n=name,
+    )
+    return family_id
+
+
+def create_request(
+    family_id: uuid.UUID,
+    *,
+    role: str = "nanny",
+    status: str = "open",
+    state: str = "Lagos",
+    trial_days: int = 14,
+) -> uuid.UUID:
+    request_id = uuid.uuid4()
+    run_sql(
+        "INSERT INTO requests (id, family_id, role, title, description, schedule, live_in, state, lga, "
+        "start_date, trial_days, status) VALUES (:id, :f, CAST(:role AS worker_role), 'Nanny for twins', "
+        "'Two-year-old twins, weekdays, calm and experienced please.', 'full_time', false, :state, 'Ikeja', "
+        "current_date + 7, :trial, CAST(:status AS request_status))",
+        id=request_id,
+        f=family_id,
+        role=role,
+        state=state,
+        trial=trial_days,
+        status=status,
+    )
+    return request_id
+
+
+def create_proposal(request_id: uuid.UUID, worker_id: uuid.UUID, *, status: str = "pending") -> uuid.UUID:
+    proposal_id = uuid.uuid4()
+    run_sql(
+        "INSERT INTO proposals (id, request_id, worker_id, agency_id, status) "
+        "SELECT :id, :r, w.id, w.agency_id, CAST(:status AS proposal_status) FROM workers w WHERE w.id = :w",
+        id=proposal_id,
+        r=request_id,
+        w=worker_id,
+        status=status,
+    )
+    return proposal_id
+
+
+def insert_placement(proposal_id: uuid.UUID, status: str = "trial") -> uuid.UUID:
+    """Inserts a placement straight into the table (to prove the database rules, or for setup)."""
+    placement_id = uuid.uuid4()
+    run_sql(
+        "INSERT INTO placements (id, request_id, proposal_id, worker_id, family_id, agency_id, status, "
+        "hold_expires_at, trial_starts_on, trial_ends_on, confirmed_at, ended_at, end_reason) "
+        "SELECT :id, p.request_id, p.id, p.worker_id, r.family_id, p.agency_id, "
+        "CAST(:s AS placement_status), "
+        "CASE WHEN :s = 'pending_payment' THEN now() + interval '30 minutes' END, "
+        "CASE WHEN :s IN ('trial', 'confirmed', 'ended') THEN current_date END, "
+        "CASE WHEN :s IN ('trial', 'confirmed', 'ended') THEN current_date + 14 END, "
+        "CASE WHEN :s = 'confirmed' THEN now() END, "
+        "CASE WHEN :s IN ('ended', 'cancelled') THEN now() END, "
+        "CASE WHEN :s IN ('ended', 'cancelled') THEN CAST('family_ended' AS placement_end_reason) END "
+        "FROM proposals p JOIN requests r ON r.id = p.request_id WHERE p.id = :proposal",
+        id=placement_id,
+        s=status,
+        proposal=proposal_id,
+    )
+    return placement_id
+
+
 def set_items(
     worker_id: uuid.UUID, status: str, *, except_kind: str | None = None, other_status: str = "submitted"
 ) -> None:

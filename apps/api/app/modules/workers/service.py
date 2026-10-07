@@ -12,6 +12,7 @@ from app.core.errors import DuplicateWorker, NotFound, ValidationFailed
 from app.core.pagination import PageParams
 from app.core.security import hash_nin
 from app.modules.agencies.models import Agency, WorkerRole
+from app.modules.placements.repository import PlacementRepository
 from app.modules.verification.repository import VerificationRepository
 from app.modules.workers.models import ListingStatus, Worker
 from app.modules.workers.repository import WorkerRepository
@@ -33,10 +34,12 @@ class WorkerService:
         self.settings = settings
         self.workers = WorkerRepository(session)
         self.checks = VerificationRepository(session)
+        self.placements = PlacementRepository(session)
 
     async def out(self, worker: Worker) -> WorkerOut:
         statuses = await self.checks.statuses([worker.id])
-        return WorkerOut.of(worker, statuses[worker.id], photo_url(self.settings, worker))
+        active = await self.placements.active_for_worker(worker.id)
+        return WorkerOut.of(worker, statuses[worker.id], photo_url(self.settings, worker), active)
 
     async def create(self, agency: Agency, data: dict[str, Any], nin: str) -> WorkerOut:
         """Creates the worker with its four checks `not_started`. Allowed before approval (drafts)."""
@@ -71,13 +74,16 @@ class WorkerService:
         available: bool | None,
     ) -> tuple[list[WorkerOut], int]:
         async with self.session.begin():
-            if available is False:
-                return [], 0  # nobody is placed until B4 adds placements
             rows, total = await self.workers.page(
-                params, agency_id=agency.id, role=role, listing_status=listing_status
+                params, agency_id=agency.id, role=role, listing_status=listing_status, available=available
             )
-            statuses = await self.checks.statuses([w.id for w, _ in rows])
-            return [WorkerOut.of(w, statuses[w.id], photo_url(self.settings, w)) for w, _ in rows], total
+            ids = [w.id for w, _ in rows]
+            statuses = await self.checks.statuses(ids)
+            active = await self.placements.active_for_workers(ids)
+            return [
+                WorkerOut.of(w, statuses[w.id], photo_url(self.settings, w), active.get(w.id))
+                for w, _ in rows
+            ], total
 
     async def update(self, agency: Agency, worker_id: uuid.UUID, changes: dict[str, Any]) -> WorkerOut:
         async with self.session.begin():

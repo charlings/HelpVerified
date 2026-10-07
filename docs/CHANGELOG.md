@@ -1,5 +1,65 @@
 # Changelog
 
+## B4 — Requests, proposals, placements (2026-10-07)
+
+### 1. Objective
+Families post requests, agencies propose listed workers, families accept, and placements run through the state machine (hold → trial → confirmed → ended, plus cancel and replacement), with **rule 2** enforced under real concurrency: a worker is never in two active placements.
+
+### 2. Files created
+- Migration `20261007_0004_requests_placements.py` and copy `app/db/sql/0004_requests_placements.sql`: six tables, five enums (with `admin_ended`), `placements_one_active_per_worker` (**rule 2**), `placements_one_active_per_request`, consistency checks
+- `app/modules/families/` (profile, dashboard), `app/modules/requests/` (requests, proposals, public worker profiles, `views.py`), `app/modules/placements/` (`state_machine.py`, the mirror of the web's; `service.py` with accept, start_trial, confirm, cancel, end, replace, expire_holds; `views.py` with `allowed_actions` and events)
+- `app/integrations/payments.py` (gateway interface; `UnconfiguredPayments` until B5), `app/core/idempotency.py` and `idempotent.py` (`Idempotency-Key`), `app/core/dates.py` (`lagos_date`)
+- Tests: `concurrency/test_concurrent_accepts.py`, `integration/test_one_active_placement_sql.py`, `test_requests_proposals.py`, `test_accept.py`, `test_placements.py`, `unit/test_state_machine.py`, `unit/test_sql_copies.py` (replaces the 0003-only check); `tests/placement_flows.py`, `FakePayments`
+- `docs/decisions/0013-b4-requests-proposals-placements.md`
+
+### 3. Files modified
+- B3 gaps filled: `WorkerOut.available` / `active_placement` and the `available` filter (workers), dashboard `open_requests` / `trials_ending` (agencies), `active_placements` and `GET /admin/overview` (admin), suspension withdraws pending proposals
+- `app/main.py` (three routers, payments, idempotency store), `app/core/config.py` (placement settings), `app/core/deps.py` (new services, `FamilyUser`)
+- `tests/conftest.py` (shared fake gateway, `helper_sessions`, new tables in the reset), `tests/factories.py` (families, requests, proposals, placements), `test_migrations.py`
+- `.env.example`, `README.md`, `CLAUDE.md`, `docs/database.md` (ERD and rule 2)
+
+### 4. Key decisions
+ADR 0013: rule 2 in index, lock and mapping; rule 1 re-checked at propose and accept; money deferred to B5 behind a gateway (502 until then); accept-time fee only; lapsed holds don't count; WAT calendar; replacement and free-allowance rules; end reasons by role; idempotency in Redis; shapes as the mock; actors from roles; `use_alter` on the FK cycle.
+
+### 5. Tests and checks
+| Check | Result |
+| --- | --- |
+| `ruff check`, `ruff format --check`, `mypy app tests` (strict) | Pass, 132 files |
+| `pytest -q` | **329 passed** in about 3 minutes |
+| Rule 2, direct SQL | A second active placement is refused for all 9 pairs of active states; finished placements don't block; a request can't be filled twice |
+| Rule 2, concurrency | **8 simultaneous accepts on separate connections → exactly 1 placement, 7 × `WORKER_UNAVAILABLE`**, stable over 5 runs; an unlocked insert also gets 409, never 500 |
+| State machine | Transitions match `state-machine.ts`; all 25 status pairs; `allowed_actions` for every state × role; one event row per transition |
+| Replacement | Ends and reopens (`test_replacement_ends_and_reopens`); the first is free (straight to trial), the second is charged; window closed after 30 days → 409 |
+| Rule 1 + placements | Rejecting a check delists the worker; the active placement continues |
+| Migrations | up → base → up with all B4 tables and types; models match migrations (foreign-key cycle included) |
+| Live server | Dev DB migrated 0003 → 0004; 47 routes |
+
+### 6. Known issues
+- **Accept answers 502 `PAYMENT_PROVIDER_ERROR` on a real server** until B5 adds Paystack. The hold is created and lapses after 30 minutes. Tests use a fake gateway.
+- `/placements/{id}/pay` and `/payments/*` arrive in B5; `fees_paid_this_month_kobo` reads 0 until then.
+- Hold expiry and check expiry run when called; B6 schedules them.
+- A super admin gets 403 on `/requests/*`, matching the mock, although the contract table mentions admin access. Admin users can see placements.
+
+### 7. Assumptions
+- The replacement window includes its last moment (`now <= confirmed_at + 30 days`).
+- A cancelled hold's accepted proposal returns to `pending` with the others, so the family can accept the same worker again.
+
+### 8. Acceptance criteria (B4 row: "Accept with locks, partial unique indexes, state machine, events, replacement, end; must-have tests 1, 2, 5 pass; `allowed_actions` correct")
+| Item | Result |
+| --- | --- |
+| Accept with locks; partial unique indexes | **Met** |
+| `test_concurrent_accepts_create_one_placement` (409, no 500) | **Met** |
+| `test_illegal_transition_rejected` (every disallowed pair); one event row per transition | **Met** |
+| `test_replacement_ends_and_reopens`; window closed → 409 | **Met** |
+| `allowed_actions` table-driven for every state × role | **Met** |
+| End by each party; tenant 404s; role 403s | **Met** |
+| Expired hold cancels and reopens (frozen clock) | **Met** (service; scheduled in B6) |
+
+### 9. Recommended next step
+B5: Paystack test mode. Initialise transactions at accept, add the `payments` table, the signed and deduplicated webhook that re-verifies with Paystack before calling `start_trial`, `/placements/{id}/pay`, refunds when a hold has lapsed and the worker is taken, and agency subscriptions. B5 needs Paystack **test** keys from you.
+
+**Signed off by the owner 2026-10-07.** Owner decision recorded at sign-off: the placement fee is charged at accept.
+
 ## B3 — Agencies, workers, verification (2026-10-07)
 
 ### 1. Objective

@@ -20,6 +20,12 @@ TABLES = {
     "verification_documents",
     "document_access_log",
     "audit_log",
+    "families",
+    "requests",
+    "proposals",
+    "placements",
+    "placement_events",
+    "replacement_requests",
 }
 TYPES = {
     "user_role",
@@ -30,6 +36,11 @@ TYPES = {
     "verification_kind",
     "verification_status",
     "subscription_status",
+    "request_status",
+    "proposal_status",
+    "placement_status",
+    "placement_end_reason",
+    "replacement_status",
 }
 
 

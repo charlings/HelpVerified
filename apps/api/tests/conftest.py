@@ -16,7 +16,7 @@ from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 # Local services (docker compose, or scripts/pg-portable.ps1 + redis-portable.ps1) and CI use these.
 # 127.0.0.1, not localhost: on Windows a refused ::1 attempt costs ~2 s per new connection.
@@ -42,11 +42,19 @@ TEST_ENV = {
 os.environ.update(TEST_ENV)
 
 from app.core.config import Settings, get_settings, load_settings  # noqa: E402
+from app.db.session import create_sessionmaker  # noqa: E402
+from app.integrations.payments import PaymentGateway  # noqa: E402
 from app.main import create_app  # noqa: E402
-from tests.fakes import FakeCloudinary, MemoryEmailSender  # noqa: E402
+from tests.fakes import FakeCloudinary, FakePayments, MemoryEmailSender  # noqa: E402
 
 ALEMBIC_INI = Path(__file__).parents[1] / "alembic.ini"
 TABLES = (
+    "replacement_requests",
+    "placement_events",
+    "placements",
+    "proposals",
+    "requests",
+    "families",
     "audit_log",
     "document_access_log",
     "verification_documents",
@@ -79,6 +87,14 @@ async def _execute(sql: str, params: dict[str, object]) -> list[tuple[object, ..
 def run_sql(sql: str, **params: object) -> list[tuple[object, ...]]:
     """Runs one statement with bound parameters (never formatted into the SQL)."""
     return _loop.run_until_complete(_execute(sql, params))
+
+
+def helper_sessions() -> async_sessionmaker[AsyncSession]:
+    """Sessions on the helpers' shared pool, for calling services directly (use with `run_async`)."""
+    global _engine
+    if _engine is None:
+        _engine = create_async_engine(TEST_DATABASE_URL)
+    return create_sessionmaker(_engine)
 
 
 def run_async[T](coroutine: Coroutine[object, object, T]) -> T:
@@ -133,6 +149,8 @@ async def _delete_all() -> None:
     if _engine is None:
         _engine = create_async_engine(TEST_DATABASE_URL)
     async with _engine.begin() as connection:
+        # requests and placements reference each other (a replacement request names the placement it replaces)
+        await connection.execute(text("UPDATE requests SET replaces_placement_id = NULL"))
         for table in TABLES:  # children first, so foreign keys are satisfied
             await connection.execute(text(f"DELETE FROM {table}"))  # noqa: S608  # fixed names
 
@@ -178,13 +196,32 @@ def cloudinary(_session_cloudinary: FakeCloudinary) -> FakeCloudinary:
 
 
 @pytest.fixture(scope="session")
+def _session_payments() -> FakePayments:
+    return FakePayments()
+
+
+@pytest.fixture
+def payments(_session_payments: FakePayments) -> FakePayments:
+    _session_payments.started.clear()
+    return _session_payments
+
+
+@pytest.fixture(scope="session")
 def shared_api(
-    db_ready: None, _session_outbox: MemoryEmailSender, _session_cloudinary: FakeCloudinary
+    db_ready: None,
+    _session_outbox: MemoryEmailSender,
+    _session_cloudinary: FakeCloudinary,
+    _session_payments: FakePayments,
 ) -> Iterator[TestClient]:
     """One running app for the whole session. Closing pooled PostgreSQL connections costs seconds
     on Windows, so tests share this app's pool; `api` resets its state between tests."""
     get_settings.cache_clear()
-    app = create_app(load_settings(), email_sender=_session_outbox, cloudinary=_session_cloudinary)
+    app = create_app(
+        load_settings(),
+        email_sender=_session_outbox,
+        cloudinary=_session_cloudinary,
+        payments=_session_payments,
+    )
     with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
 
@@ -200,15 +237,16 @@ ApiFactory = Callable[..., TestClient]
 
 @pytest.fixture
 def make_api(
-    clean_state: None, outbox: MemoryEmailSender, cloudinary: FakeCloudinary
+    clean_state: None, outbox: MemoryEmailSender, cloudinary: FakeCloudinary, payments: FakePayments
 ) -> Iterator[ApiFactory]:
-    """Builds a separate running app with settings overrides (slower: it opens its own connections)."""
+    """Builds a separate running app with settings overrides (slower: it opens its own connections).
+    `gateway=` swaps the payment gateway (for example, the real unconfigured one)."""
     clients: list[TestClient] = []
 
-    def build(**overrides: object) -> TestClient:
+    def build(gateway: PaymentGateway | None = None, **overrides: object) -> TestClient:
         get_settings.cache_clear()
         settings = load_settings().model_copy(update=overrides)
-        app = create_app(settings, email_sender=outbox, cloudinary=cloudinary)
+        app = create_app(settings, email_sender=outbox, cloudinary=cloudinary, payments=gateway or payments)
         test_client = TestClient(app, raise_server_exceptions=False)
         test_client.__enter__()
         clients.append(test_client)
@@ -221,7 +259,11 @@ def make_api(
 
 @pytest.fixture
 def api(
-    shared_api: TestClient, clean_state: None, outbox: MemoryEmailSender, cloudinary: FakeCloudinary
+    shared_api: TestClient,
+    clean_state: None,
+    outbox: MemoryEmailSender,
+    cloudinary: FakeCloudinary,
+    payments: FakePayments,
 ) -> TestClient:
     """The running app with default test settings, empty data, no cookies and fresh fakes."""
     shared_api.cookies.clear()

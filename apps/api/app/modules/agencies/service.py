@@ -1,18 +1,26 @@
 """Agency onboarding, profile and dashboard (api-contracts.md §3, Agencies)."""
 
 import uuid
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import utcnow
+from app.core.config import Settings
+from app.core.dates import lagos_date
 from app.core.errors import AgencyExists, EmailNotVerified, Forbidden, NotFound
 from app.modules.agencies.models import Agency, AgencyStatus, Subscription, SubscriptionStatus, WorkerRole
 from app.modules.agencies.repository import AgencyRepository, cac_taken_error
+from app.modules.placements.repository import PlacementRepository
+from app.modules.placements.views import PlacementViews
+from app.modules.requests.repository import RequestRepository
 from app.modules.users.models import User, UserRole
 from app.modules.verification.models import VerificationStatus
 from app.modules.verification.repository import VerificationRepository
 
 NEEDS_ATTENTION = (VerificationStatus.submitted, VerificationStatus.rejected, VerificationStatus.expired)
+TRIAL_REMINDER_DAYS = 3  # the dashboard lists trials ending within this many days (as the web mock does)
 
 
 def is_active(agency: Agency, subscription: Subscription | None) -> bool:
@@ -25,8 +33,9 @@ def is_active(agency: Agency, subscription: Subscription | None) -> bool:
 
 
 class AgencyService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, settings: Settings) -> None:
         self.session = session
+        self.settings = settings
         self.agencies = AgencyRepository(session)
 
     async def for_user(self, user_id: uuid.UUID) -> Agency | None:
@@ -70,12 +79,18 @@ class AgencyService:
         return current
 
     async def dashboard(self, agency: Agency) -> dict[str, Any]:
+        soon = lagos_date(utcnow()) + timedelta(days=TRIAL_REMINDER_DAYS)
         async with self.session.begin():
             subscription = await self.agencies.subscription(agency.id)
             counts = await self.agencies.worker_counts(agency.id)
             attention = await VerificationRepository(self.session).count_for_agency(
                 agency.id, NEEDS_ATTENTION
             )
+            open_requests = await RequestRepository(self.session).count_matching(
+                list(agency.roles_offered), agency.state
+            )
+            ending = await PlacementRepository(self.session).trials_ending(soon, agency_id=agency.id)
+            summaries = await PlacementViews(self.session, self.settings).summaries(ending)
         return {
             "agency": {
                 "id": agency.id,
@@ -91,8 +106,16 @@ class AgencyService:
             "active": is_active(agency, subscription),
             "workers": counts,
             "checks_needing_attention": attention,
-            "open_requests": 0,  # requests arrive in B4
-            "trials_ending": [],  # placements arrive in B4
+            "open_requests": open_requests,
+            "trials_ending": [
+                {
+                    "id": s.id,
+                    "worker_name": s.worker.full_name,
+                    "family_name": s.family.name,
+                    "trial_ends_on": s.trial_ends_on,
+                }
+                for s in summaries
+            ],
         }
 
     async def subscription(self, agency_id: uuid.UUID) -> Subscription | None:

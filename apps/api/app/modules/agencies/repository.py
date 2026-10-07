@@ -51,6 +51,12 @@ class AgencyRepository:
         await self.session.refresh(agency)
         return agency
 
+    async def pending_oldest_first(self) -> list[Agency]:
+        rows = await self.session.scalars(
+            select(Agency).where(Agency.status == AgencyStatus.pending).order_by(Agency.created_at)
+        )
+        return list(rows)
+
     async def subscription(self, agency_id: uuid.UUID) -> Subscription | None:
         return await self.session.scalar(select(Subscription).where(Subscription.agency_id == agency_id))
 

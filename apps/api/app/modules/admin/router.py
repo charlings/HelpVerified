@@ -10,6 +10,7 @@ from app.core.pagination import Page, PageParams, page_params
 from app.modules.admin.schemas import (
     AdminAgencyDetail,
     AdminAgencySummary,
+    AdminOverview,
     AdminWorkerDetail,
     AgencyActionIn,
     AuditEntry,
@@ -23,6 +24,12 @@ from app.modules.workers.schemas import AdminWorkerOut, ListingName, RoleName
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 Paging = Annotated[PageParams, Depends(page_params)]
+
+
+@router.get("/overview")
+async def overview(_: AdminUser, admin: AdminServiceDep) -> AdminOverview:
+    """Counts, the approval queue (oldest first) and the five latest audit entries."""
+    return await admin.overview()
 
 
 @router.get("/agencies")

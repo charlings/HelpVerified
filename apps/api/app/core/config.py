@@ -54,6 +54,14 @@ class Settings(BaseSettings):
     CLOUDINARY_API_SECRET: SecretStr = Field(min_length=1)
     CLOUDINARY_SIGNED_URL_TTL_SEC: int = Field(default=300, gt=0, le=3600)
 
+    # Placements (B4). Business defaults the owner may change (CLAUDE.md "Open decisions").
+    TRIAL_DAYS_DEFAULT: int = Field(default=14, ge=7, le=30)
+    REPLACEMENT_WINDOW_DAYS: int = Field(default=30, ge=0)  # after confirmation; the trial always counts
+    FREE_REPLACEMENTS: int = Field(default=1, ge=0)  # per placement fee
+    PAYMENT_HOLD_MINUTES: int = Field(default=30, gt=0)  # an unpaid accept holds the worker this long
+    FEE_CHARGED_AT: Literal["accept"] = "accept"  # owner decision 2026-10-07 (ADR 0013)
+    IDEMPOTENCY_TTL_HOURS: int = Field(default=24, gt=0)
+
     # Email: "outbox" writes messages to EMAIL_OUTBOX_DIR (development and test only). Providers arrive in B6.
     EMAIL_PROVIDER: Literal["outbox"] = "outbox"
     EMAIL_FROM: str = "HelpVerified <no-reply@helpverified.local>"
