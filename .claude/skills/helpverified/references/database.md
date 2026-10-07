@@ -66,7 +66,8 @@ agencies (
   id uuid PK, name text NOT NULL, cac_number text UNIQUE NOT NULL, email citext NOT NULL, phone text NOT NULL,
   address_line text NOT NULL, state text NOT NULL, lga text NOT NULL,
   roles_offered worker_role[] NOT NULL DEFAULT '{}',
-  status agency_status NOT NULL DEFAULT 'pending', approved_at timestamptz NULL, approved_by uuid NULL FK users,
+  status agency_status NOT NULL DEFAULT 'pending', status_reason text NULL,  -- shown to rejected/suspended agencies
+  approved_at timestamptz NULL, approved_by uuid NULL FK users,
   created_at, updated_at
 )
 agency_members ( user_id uuid PK FK users, agency_id uuid FK agencies NOT NULL, created_at )
@@ -87,6 +88,7 @@ workers (
   photo_public_id text NULL,
   nin_hash text UNIQUE NOT NULL,             -- HMAC-SHA256(NIN, NIN_PEPPER); never store raw NIN
   nin_last4 char(4) NOT NULL,
+  consent_at timestamptz NOT NULL,           -- agency confirmed the worker's consent (B3)
   listing_status listing_status NOT NULL DEFAULT 'draft', listed_at timestamptz NULL,
   created_at, updated_at,
   CHECK (expected_salary_min_kobo IS NULL OR expected_salary_max_kobo IS NULL
@@ -97,7 +99,9 @@ verification_items (
   status verification_status NOT NULL DEFAULT 'not_started',
   details jsonb NOT NULL DEFAULT '{}',      -- e.g. guarantor name/phone/relationship, referee contacts
   verified_by uuid NULL FK users, verified_at timestamptz NULL, expires_at timestamptz NULL,
-  rejection_reason text NULL, created_at, updated_at,
+  rejection_reason text NULL,
+  flag_reason text NULL, flagged_at timestamptz NULL,  -- super-admin flag; cleared on re-verify (ADR 0006)
+  created_at, updated_at,
   UNIQUE (worker_id, kind),
   CHECK (status <> 'verified' OR (verified_by IS NOT NULL AND verified_at IS NOT NULL)),
   CHECK (status <> 'rejected' OR rejection_reason IS NOT NULL)

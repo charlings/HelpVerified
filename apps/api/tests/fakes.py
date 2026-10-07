@@ -1,6 +1,48 @@
 """Test doubles for integrations."""
 
+import uuid
+from datetime import datetime
+from urllib.parse import urlencode
+
+from app.integrations.cloudinary import Asset, SignedUpload, sign
 from app.integrations.email import EmailMessage
+
+FAKE_DOWNLOAD_HOST = "https://fake-cloudinary.test"
+
+
+class FakeCloudinary:
+    """Holds "uploaded" assets in memory. Signs like the real client, so signatures can be checked."""
+
+    def __init__(self, api_key: str = "123456789012345", api_secret: str = "test-cloudinary-secret") -> None:
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.assets: dict[str, Asset] = {}
+
+    def sign_upload(self, folder: str, delivery_type: str, timestamp: int) -> SignedUpload:
+        params: dict[str, str | int] = {"folder": folder, "timestamp": timestamp, "type": delivery_type}
+        return SignedUpload(
+            upload_url="https://api.cloudinary.com/v1_1/hv-test/auto/upload",
+            api_key=self.api_key,
+            timestamp=timestamp,
+            signature=sign(params, self.api_secret),
+            folder=folder,
+            type=delivery_type,
+        )
+
+    def upload(self, folder: str, delivery_type: str, *, fmt: str = "pdf", size: int = 180_000) -> str:
+        """What the browser does with the signed parameters; returns the new public_id."""
+        public_id = f"{folder}/{uuid.uuid4().hex}"
+        resource_type = "image"  # Cloudinary stores PDFs uploaded with `auto` as images
+        self.assets[public_id] = Asset(public_id, delivery_type, resource_type, fmt, size)
+        return public_id
+
+    async def find_asset(self, public_id: str, delivery_type: str) -> Asset | None:
+        asset = self.assets.get(public_id)
+        return asset if asset and asset.type == delivery_type else None
+
+    def private_download_url(self, asset: Asset, expires_at: datetime, timestamp: int) -> str:
+        query = {"public_id": asset.public_id, "expires_at": int(expires_at.timestamp()), "signature": "fake"}
+        return f"{FAKE_DOWNLOAD_HOST}/download?{urlencode(query)}"
 
 
 class MemoryEmailSender:

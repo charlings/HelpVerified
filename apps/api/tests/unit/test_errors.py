@@ -100,6 +100,22 @@ def test_unhandled_error_is_generic(probe_client: TestClient, capsys: pytest.Cap
     assert response.json()["error"]["request_id"] in logged
 
 
+def test_crash_logs_carry_no_request_secrets(
+    probe_client: TestClient, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Stack traces are logged without frame locals, which would include headers and cookies."""
+    secret_token = "Bearer eyJsecret-token-value-that-must-not-be-logged"
+    probe_client.cookies.set("hv_refresh", "refresh-cookie-value-that-must-not-be-logged")
+
+    probe_client.get("/_probe/crash", headers={"Authorization": secret_token})
+
+    logged = capsys.readouterr().out
+    assert "unhandled_error" in logged
+    assert "secret-token-value" not in logged
+    assert "refresh-cookie-value" not in logged
+    assert '"locals"' not in logged
+
+
 def test_request_id_is_taken_from_the_caller(client: TestClient) -> None:
     response = client.get("/no/such/route", headers={"X-Request-ID": "trace-abc.123"})
 

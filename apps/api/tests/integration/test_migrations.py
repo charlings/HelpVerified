@@ -2,13 +2,35 @@
 
 import pytest
 from alembic import command
+from fastapi.testclient import TestClient
 
-from tests.conftest import alembic_config, reset_sql_connections, run_sql
+from tests.conftest import alembic_config, reset_app_connections, reset_sql_connections, run_sql
 
 pytestmark = pytest.mark.usefixtures("db_ready")
 
-TABLES = {"users", "refresh_tokens", "one_time_tokens"}
-TYPES = {"user_role", "account_status"}
+TABLES = {
+    "users",
+    "refresh_tokens",
+    "one_time_tokens",
+    "agencies",
+    "agency_members",
+    "subscriptions",
+    "workers",
+    "verification_items",
+    "verification_documents",
+    "document_access_log",
+    "audit_log",
+}
+TYPES = {
+    "user_role",
+    "account_status",
+    "agency_status",
+    "worker_role",
+    "listing_status",
+    "verification_kind",
+    "verification_status",
+    "subscription_status",
+}
 
 
 def extensions() -> set[object]:
@@ -38,7 +60,7 @@ def assert_at_head() -> None:
     assert enum_types() >= TYPES
 
 
-def test_upgrade_downgrade_upgrade() -> None:
+def test_upgrade_downgrade_upgrade(shared_api: TestClient) -> None:
     config = alembic_config()
     command.upgrade(config, "head")
     assert_at_head()
@@ -51,6 +73,7 @@ def test_upgrade_downgrade_upgrade() -> None:
 
     command.upgrade(config, "head")
     reset_sql_connections()  # the enum types were recreated with new OIDs
+    reset_app_connections(shared_api)
     assert_at_head()
     assert run_sql("SELECT gen_random_uuid()::text")  # pgcrypto works
 

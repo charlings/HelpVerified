@@ -5,6 +5,7 @@ SHA-256 hash is stored, so a database leak does not reveal usable tokens.
 """
 
 import hashlib
+import hmac
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -53,6 +54,12 @@ def verify_password(password: str, password_hash: str | None) -> bool:
         return _hasher.verify(password_hash or _DUMMY_HASH, password) and password_hash is not None
     except VerificationError, InvalidHashError:
         return False
+
+
+def hash_nin(nin: str, pepper: str) -> str:
+    """HMAC-SHA256 of an 11-digit NIN with NIN_PEPPER. The raw NIN is never stored or logged
+    (security-and-compliance.md §1); this keyed hash is what makes a duplicate detectable."""
+    return hmac.new(pepper.encode(), nin.strip().encode(), hashlib.sha256).hexdigest()
 
 
 def new_opaque_token() -> str:

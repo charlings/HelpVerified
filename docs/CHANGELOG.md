@@ -1,5 +1,72 @@
 # Changelog
 
+## B3 — Agencies, workers, verification (2026-10-07)
+
+### 1. Objective
+Agencies onboard and are moderated; agencies add workers (NIN never stored in clear), run the four checks with evidence on Cloudinary, and list workers only through rule 1, enforced in PostgreSQL and in the verification service. Documents are viewed only through logged, short-lived links.
+
+### 2. Files created
+- Migration `20261007_0003_agencies_workers.py` and readable copy `app/db/sql/0003_agencies_workers.sql`: eight tables, six enums, `updated_at` triggers, and **rule 1**: `workers_listing_gate` and `verification_items_delist`
+- `app/modules/agencies/` (onboarding, `/agencies/me`, dashboard, `is_active`), `app/modules/workers/` (CRUD), `app/modules/verification/` (checks, evidence, uploads, document links, `list_worker`, `expire_lapsed`, `flag`), `app/modules/admin/` (agency moves, admin worker views, audit log)
+- `app/integrations/cloudinary.py` (signing, Admin API lookup, expiring private download URLs)
+- `app/core/pagination.py`, `validation.py` (phone, state, reason), `dates.py` (`add_months`); `app/db/errors.py` (Postgres error details), `sql_script.py` (statement splitter), `types.py` (`pg_enum`)
+- Tests: `test_listing_gate_sql.py` (rule 1 by direct SQL), `test_listing_gate_api.py` (rule 1 by API), `test_agencies.py`, `test_workers.py`, `test_verification.py`, `test_documents.py`, `test_admin.py`, `test_verification_expiry.py`, `unit/test_b3_units.py`; `tests/factories.py`, `tests/workflows.py`, `FakeCloudinary`
+- `docs/decisions/0012-b3-agencies-workers-verification.md`
+- `apps/api/scripts/cloudinary_live_check.py`: one-off check against a real Cloudinary account (signed upload → Admin API lookup → expiring download → tampered URL refused → not public → cleanup)
+
+### 3. Files modified
+- `app/main.py`: Cloudinary on `app.state`; four new routers
+- `app/core/config.py`: `NIN_PEPPER`, `CLOUDINARY_*`, `VERIFICATION_TTL_MONTHS`
+- `app/core/deps.py`: service factories, `CurrentAgency`, `AdminUser`, `client_ip` (real IPs only)
+- `app/core/security.py`: `hash_nin` (HMAC-SHA256)
+- **`app/core/logging.py`: tracebacks no longer include frame locals** (a crash log had included a bearer token's prefix; now tested)
+- `app/modules/users/`: `UserOut.agency` filled for agency admins (`/me`, login); phone rule moved to `core/validation.py`
+- Repositories: SQLAlchemy 2.1's deprecated `Result.tuples()` removed
+- `tests/conftest.py`: one shared app per session, `DELETE` instead of `TRUNCATE`, B3 settings; suite runs in about 2 minutes instead of 32
+- `.env.example`, `.github/workflows/ci.yml` (per-run random `NIN_PEPPER` and Cloudinary placeholders), `README.md`, `CLAUDE.md`, `docs/database.md` (ERD and rules), skill `references/database.md` (B3 columns)
+
+### 4. Key decisions
+ADR 0012: rule 1 in trigger, service and repository mapping; lapsed counts as unverified before the job runs; minimal `subscriptions` now (Paystack in B5); B4-dependent fields return empty values in the contract shape; Cloudinary via `httpx`; asset checks at registration; access log plus audit entry per document view; normalised CAC; admin moves and effects; no locals in crash logs; migration SQL kept identical to its copy; shared test app.
+
+### 5. Tests and checks
+| Check | Result |
+| --- | --- |
+| `ruff check`, `ruff format --check`, `mypy app tests` (strict) | Pass, 98 files |
+| `pytest -q` (Postgres 16.15, Redis 7.4.11, fake Cloudinary) | **218 passed** in about 2 minutes |
+| Rule 1, direct SQL | Each of the 4 checks missing, each non-verified status, a lapsed `expires_at`, inserting as listed: all refused with `WORKER_NOT_VERIFIED`; leaving `verified` delists |
+| Rule 1, API | `test_cannot_list_with_pending_item` (×4), `test_rejecting_item_delists_worker`, evidence removal and flags delist, expired blocks, inactive agency → 403 |
+| Migrations | up → base → up with every B3 table and type; models match migrations; SQL copy matches the migration |
+| Live Cloudinary (`scripts/cloudinary_live_check.py`, owner's account) | **Passed**: signed upload 200 → Admin API lookup found → expiring download 200 → tampered signature 401 → public URL 404 → asset deleted |
+| Live server | Dev DB migrated 0002 → 0003; server starts with 30 routes; no token → 401 envelope |
+
+### 6. Known issues
+- `GET /admin/overview` and `GET /workers/{id}/public` aren't built (they need B4 tables).
+- The dashboard's request and trial fields, `available` and `active_placement` return placeholder values until B4.
+- Suspending an agency doesn't withdraw proposals yet (no proposals until B4).
+- Soft-deleted documents stay in Cloudinary until a cleanup job (B6).
+- Alembic loads the full settings, so migrating locally also needs the Cloudinary keys in `.env`.
+
+### 7. Assumptions
+- Expiry adds calendar months (31 January + 1 month = 28 or 29 February).
+- Check `details` are free-form short text (up to 12 fields, 500 characters each); the web form defines which fields each check uses.
+
+### 8. Acceptance criteria (B3 row: "Onboarding + approval, NIN hashing, items, Cloudinary signing/registration, document URLs + access log, listing trigger; must-have tests 3 and 4 pass")
+| Item | Result |
+| --- | --- |
+| Onboarding and approval | **Met** |
+| NIN hashing; duplicate → 409; no raw NIN stored | **Met** |
+| The four checks and their rules | **Met** |
+| Cloudinary signing and registration (folder, size, format checks) | **Met** (fake in tests; live check passed) |
+| Document URLs and access log; family → 404 | **Met** |
+| Listing trigger; `test_cannot_list_with_pending_item` incl. direct SQL; `test_rejecting_item_delists_worker` | **Met** (the placement-continues half is tested in B4) |
+| Consent required to create a worker | **Met** |
+| 401/403/404 for each B3 router | **Met** |
+
+### 9. Recommended next step
+B4: requests, proposals and placements, with **rule 2** (the one-active-placement index and a locked accept, tested under concurrency).
+
+**Signed off by the owner 2026-10-07.**
+
 ## B2 — Auth (2026-10-07)
 
 ### 1. Objective

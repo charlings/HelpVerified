@@ -37,7 +37,9 @@ ignore = ["N818"]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests use fixed fake passwords and secrets on purpose.
-"tests/**" = ["S101", "S105", "S106"]
+"tests/**" = ["S101", "S105", "S106", "S107"]
+# Migrations embed SQL exactly as in app/db/sql/; its lines aren't Python lines.
+"app/db/migrations/versions/*.py" = ["E501"]
 
 [tool.mypy]
 strict = true

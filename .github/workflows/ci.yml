@@ -143,8 +143,13 @@ jobs:
       TEST_REDIS_URL: redis://localhost:6379/15
     steps:
       - uses: actions/checkout@v4
-      - name: Generate a throwaway JWT secret
-        run: echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - name: Generate throwaway secrets (tests use a fake Cloudinary; nothing is uploaded)
+        run: |
+          echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "NIN_PEPPER=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "CLOUDINARY_API_SECRET=$(openssl rand -hex 16)" >> "$GITHUB_ENV"
+          echo "CLOUDINARY_CLOUD_NAME=ci-unused" >> "$GITHUB_ENV"
+          echo "CLOUDINARY_API_KEY=000000000000000" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true

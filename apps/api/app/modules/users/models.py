@@ -4,11 +4,12 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, Enum, Text, text
+from sqlalchemy import DateTime, Text, text
 from sqlalchemy.dialects.postgresql import CITEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, Timestamps
+from app.db.types import pg_enum
 
 
 class UserRole(StrEnum):
@@ -20,11 +21,6 @@ class UserRole(StrEnum):
 class AccountStatus(StrEnum):
     active = "active"
     suspended = "suspended"
-
-
-def pg_enum(enum: type[StrEnum], name: str) -> Enum:
-    """A PostgreSQL enum whose type is created and dropped by hand in the migrations."""
-    return Enum(enum, name=name, values_callable=lambda e: [m.value for m in e], create_type=False)
 
 
 class User(Timestamps, Base):

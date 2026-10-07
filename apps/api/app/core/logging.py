@@ -16,10 +16,14 @@ def configure_logging(level: str) -> None:
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
     ]
+    # Tracebacks without frame locals: locals hold request headers (bearer tokens), cookies and bodies.
+    tracebacks = structlog.processors.ExceptionRenderer(
+        structlog.tracebacks.ExceptionDictTransformer(show_locals=False)
+    )
     structlog.configure(
         processors=[
             *shared,
-            structlog.processors.dict_tracebacks,
+            tracebacks,
             structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.getLevelNamesMapping()[level]),

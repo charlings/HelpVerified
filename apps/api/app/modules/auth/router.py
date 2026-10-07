@@ -5,7 +5,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Request, Response, status
 
 from app.core.config import Settings
-from app.core.deps import AuthServiceDep, LimiterDep, SettingsDep
+from app.core.deps import AgencyServiceDep, AuthServiceDep, LimiterDep, SettingsDep
 from app.core.errors import Forbidden
 from app.core.rate_limit import identifier
 from app.modules.auth.schemas import (
@@ -84,6 +84,7 @@ async def login(
     request: Request,
     response: Response,
     auth: AuthServiceDep,
+    agencies: AgencyServiceDep,
     limiter: LimiterDep,
     settings: SettingsDep,
 ) -> LoginOut:
@@ -93,7 +94,8 @@ async def login(
     )
     signed_in = await auth.login(body.email, body.password)
     _set_refresh_cookie(response, signed_in.refresh_token, settings)
-    return LoginOut(access_token=signed_in.access_token, user=UserOut.of(signed_in.user))
+    agency = await agencies.for_user(signed_in.user.id)
+    return LoginOut(access_token=signed_in.access_token, user=UserOut.of(signed_in.user, agency))
 
 
 @router.post("/refresh")

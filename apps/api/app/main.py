@@ -17,9 +17,14 @@ from app.core.logging import configure_logging
 from app.core.middleware import BodySizeLimitMiddleware, RequestContextMiddleware
 from app.core.rate_limit import RateLimiter
 from app.db.session import create_engine, create_sessionmaker
+from app.integrations.cloudinary import Cloudinary, CloudinaryClient
 from app.integrations.email import EmailSender, OutboxEmailSender
+from app.modules.admin.router import router as admin_router
+from app.modules.agencies.router import router as agencies_router
 from app.modules.auth.router import router as auth_router
 from app.modules.users.router import router as users_router
+from app.modules.verification.router import router as verification_router
+from app.modules.workers.router import router as workers_router
 
 API_PREFIX = "/api/v1"
 
@@ -28,7 +33,11 @@ class Health(BaseModel):
     status: str
 
 
-def create_app(settings: Settings | None = None, email_sender: EmailSender | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    email_sender: EmailSender | None = None,
+    cloudinary: Cloudinary | None = None,
+) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.LOG_LEVEL)
 
@@ -40,6 +49,11 @@ def create_app(settings: Settings | None = None, email_sender: EmailSender | Non
         app.state.rate_limiter = RateLimiter(redis)
         app.state.email_sender = email_sender or OutboxEmailSender(
             settings.EMAIL_OUTBOX_DIR, settings.EMAIL_FROM
+        )
+        app.state.cloudinary = cloudinary or CloudinaryClient(
+            settings.CLOUDINARY_CLOUD_NAME,
+            settings.CLOUDINARY_API_KEY,
+            settings.CLOUDINARY_API_SECRET.get_secret_value(),
         )
         try:
             yield
@@ -73,8 +87,15 @@ def create_app(settings: Settings | None = None, email_sender: EmailSender | Non
         """Liveness: the process is up. Does not touch the database."""
         return Health(status="ok")
 
-    app.include_router(auth_router, prefix=API_PREFIX)
-    app.include_router(users_router, prefix=API_PREFIX)
+    for router in (
+        auth_router,
+        users_router,
+        agencies_router,
+        workers_router,
+        verification_router,
+        admin_router,
+    ):
+        app.include_router(router, prefix=API_PREFIX)
     return app
 
 

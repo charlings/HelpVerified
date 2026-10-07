@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     RATE_LIMIT_EMAIL_PER_HOUR: int = Field(default=3, gt=0)
     RATE_LIMIT_USER_PER_MIN: int = Field(default=120, gt=0)
 
+    # Workers and verification (B3)
+    NIN_PEPPER: SecretStr = Field(min_length=32)  # HMAC key for NINs; long-lived (rotation needs a rehash)
+    # References and address are re-verified after this; ID and guarantor don't expire.
+    VERIFICATION_TTL_MONTHS: int = Field(default=12, gt=0)
+    CLOUDINARY_CLOUD_NAME: str = Field(min_length=1)
+    CLOUDINARY_API_KEY: str = Field(min_length=1)
+    CLOUDINARY_API_SECRET: SecretStr = Field(min_length=1)
+    CLOUDINARY_SIGNED_URL_TTL_SEC: int = Field(default=300, gt=0, le=3600)
+
     # Email: "outbox" writes messages to EMAIL_OUTBOX_DIR (development and test only). Providers arrive in B6.
     EMAIL_PROVIDER: Literal["outbox"] = "outbox"
     EMAIL_FROM: str = "HelpVerified <no-reply@helpverified.local>"

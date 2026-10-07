@@ -1,33 +1,21 @@
 """User payloads (api-contracts.md §3, `/me`; shape matches the web mock's `userOut`)."""
 
-import re
 import uuid
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
-from pydantic_core import PydanticCustomError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.core.validation import Phone
+from app.modules.agencies.models import Agency
 from app.modules.users.models import User
 
-# Same rule as the web form (apps/web/src/features/auth/schemas.ts): +234 or 0, then 10 digits.
-_NIGERIAN_PHONE = re.compile(r"^(\+234|0)[789][01]\d{8}$")
-
-
-def _nigerian_phone(value: str) -> str:
-    compact = re.sub(r"[\s()-]", "", value)
-    if not _NIGERIAN_PHONE.match(compact):
-        raise PydanticCustomError("phone", "Enter a Nigerian phone number, like 0803 123 4567.")
-    return compact
-
-
 FullName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=120)]
-Phone = Annotated[str, AfterValidator(_nigerian_phone)]
 
 
 class AgencySummary(BaseModel):
     id: uuid.UUID
     name: str
-    status: str
+    status: Literal["pending", "approved", "suspended", "rejected"]
 
 
 class UserOut(BaseModel):
@@ -54,11 +42,11 @@ class UserOut(BaseModel):
     email_verified: bool
     phone: str | None
     agency: AgencySummary | None = Field(
-        default=None, description="The caller's agency (agency admins, from B3)"
+        default=None, description="The caller's agency (agency admins who have registered one)"
     )
 
     @classmethod
-    def of(cls, user: User) -> UserOut:
+    def of(cls, user: User, agency: Agency | None = None) -> UserOut:
         return cls(
             id=user.id,
             email=user.email,
@@ -66,7 +54,9 @@ class UserOut(BaseModel):
             role=user.role.value,
             email_verified=user.email_verified_at is not None,
             phone=user.phone,
-            agency=None,
+            agency=AgencySummary(id=agency.id, name=agency.name, status=agency.status.value)
+            if agency
+            else None,
         )
 
 
