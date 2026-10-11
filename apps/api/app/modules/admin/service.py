@@ -32,6 +32,8 @@ from app.modules.admin.schemas import (
 from app.modules.agencies.models import Agency, AgencyStatus, WorkerRole
 from app.modules.agencies.repository import AgencyRepository
 from app.modules.agencies.schemas import SubscriptionOut, WorkerCounts
+from app.modules.notifications import messages
+from app.modules.notifications.repository import NotificationRepository
 from app.modules.payments.repository import PaymentRepository
 from app.modules.placements.repository import PlacementRepository
 from app.modules.requests.repository import RequestRepository
@@ -84,6 +86,7 @@ class AdminService:
         self.audit = AuditRepository(session)
         self.placements = PlacementRepository(session)
         self.requests = RequestRepository(session)
+        self.notices = NotificationRepository(session)
 
     async def overview(self) -> AdminOverview:
         """The admin home: counts, the approval queue (oldest first) and the latest audit entries."""
@@ -157,6 +160,10 @@ class AdminService:
                 "agency",
                 agency.id,
                 {"label": agency.name} | ({"reason": reason} if reason else {}),
+            )
+            await self.notices.add_many(
+                await self.notices.agency_user_ids(agency.id),
+                messages.agency_status(move.to, reinstated=action == "reinstate", reason=reason or None),
             )
             await self.session.flush()
             return await self._detail(agency)

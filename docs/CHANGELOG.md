@@ -1,5 +1,80 @@
 # Changelog
 
+## B6 — Notifications + jobs (2026-10-08)
+
+**Status: code complete — pending owner inputs #3, #4, #5, #8a.** Committed to `feature/backend` on 2026-10-11 at the owner's request. The acceptance criteria are **not signed off** until the email and Firestore live checks pass against the owner's accounts. Owner decided on 2026-10-11: rejected evidence deleted after 90 days, trial reminders 2 days before the end.
+
+### 1. Objective
+People hear about what happens to them: every important event writes a notification with the change itself, delivered after commit by email and to a Firestore mirror, with retries that can never undo the event. The time-based rules now run on their own, as scheduled jobs: holds expire, trials are reminded, checks expire, subscriptions sync, refunds and deliveries retry, and old evidence is deleted.
+
+### 2. Files created
+- Migration `20261008_0006_notifications_jobs.py` and copy `app/db/sql/0006_notifications_jobs.sql`: `notifications` (dedupe key, delivery columns, partial index on due rows); refund tracking on `payments`; `purged_at` on `verification_documents`
+- `app/modules/notifications/`: `models`, `messages` (every text and link), `repository`, `service` (feed, delivery with lease and backoff), `dispatcher` (delivers right after commit), `schemas`, `router` (`GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all`)
+- `app/integrations/firestore.py` (REST client, service-account JWT)
+- `app/jobs/`: `registry` (seven jobs), `scheduler` (APScheduler with a Redis lock), `__main__` (`python -m app.jobs list | run <name>`)
+- `scripts/email_live_check.py`, `scripts/firestore_live_check.py`
+- Tests: `integration/test_notifications.py` (20), `integration/test_jobs.py` (15), `unit/test_b6_units.py` (25); `tests/job_runs.py`; fakes `FakeMirror`, Cloudinary `destroy`, failing email and refunds
+- `docs/decisions/0015-b6-notifications-and-jobs.md`
+
+### 3. Files modified
+- `app/integrations/email.py`: `SmtpEmailSender` and `email_sender_from`
+- `app/integrations/cloudinary.py`: `destroy` (purging deleted evidence)
+- `app/modules/requests/service.py`, `placements/service.py`, `payments/service.py`, `admin/service.py`, `verification/service.py`: write the notifications for their events. Placements also get `send_trial_reminders`; payments get `retry_refunds` with tracked attempts; verification gets `expire_lapsed` (now telling the agency), `apply_retention` and `purge_deleted_documents`
+- `app/modules/verification/repository.py`: expiry returns what expired; the retention queries
+- `app/modules/payments/service.py`: **bug fix from B5.** `reconcile_subscriptions` counted a subscription as changed every hour when Paystack sent no next payment date (no harm was done, but the count was wrong)
+- `app/core/config.py`: SMTP, Firestore, jobs, reminder, refund and retention settings, with startup checks. `app/core/deps.py`: delivery starts after a request that wrote notifications. `app/main.py`: the dispatcher and the scheduler in the lifespan
+- `pyproject.toml`, `uv.lock`: `apscheduler`, `pyjwt[crypto]`
+- Tests: `conftest.py` (jobs off, `deliver()` helper, fake mirror), `fakes.py`
+- `.env.example`, `README.md`, `CLAUDE.md`, `docs/database.md`, `docs/owner-inputs.md`
+
+### 4. Key decisions
+ADR 0015:
+- The feed lives in PostgreSQL, written in the event's own transaction; Firestore is a mirror.
+- One delivery path, leased and retried with backoff, giving up after 8 attempts.
+- Email through SMTP, so the provider is configuration only. Auth emails stay direct, because they carry tokens.
+- Who is told about what is set out in one table.
+- APScheduler in the API with a Redis lock per job; every job is safe to run late or twice.
+- Refunds are tracked and retried.
+- Retention defaults (90 days, 24 months), with evidence destroyed in Cloudinary.
+- No cache (nothing public to cache).
+
+### 5. Tests and checks
+| Check | Result |
+| --- | --- |
+| `ruff check`, `ruff format --check`, `mypy app tests scripts` (strict) | Pass, 165 files |
+| `pytest -q` | **425 passed** (365 before, plus 60 new; about 7 minutes on this machine) |
+| Firestore failure (milestone criterion) | Mirror down → the proposal stands, the feed has it, the email still goes; the mirror retries after backoff without emailing again |
+| Delivery | Sent once, never twice; email down → retried; gives up after the last attempt; suspended users get no email; marking read re-mirrors `read: true`; with immediate delivery on, the email goes with no explicit call |
+| Jobs with a frozen clock (milestone criterion) | Holds: none at 29 min, cancelled at 31 (request reopens, family emailed). Reminders: none 3 days before, one 2 days before, never repeated, a missed day caught up, none after the end. Expiry: delists and names the checks; a running placement continues. Subscription lapse notified once. Refund: refused → retried → sent once; stops at the cap. Retention: rejected evidence at 91 days (not 89); idle unlisted worker at 25 months (not 23), checks expired, audited; listed and placed workers untouched; a failed Cloudinary delete retried |
+| Runner | A held lock skips the run and the lock is released after it; a failing job is contained and its lock released |
+| Units | Links exist in `routes.ts`; SMTP STARTTLS/TLS and login; Firestore JWT (RS256 verified) and document encoding, refusals → `MirrorError`, the key never in errors; settings refuse incomplete providers; daily jobs at 08:00, 02:00 and 03:00 WAT |
+| Migrations | up → base → up; models match migrations |
+| Smoke | Dev DB migrated to 0006; `python -m app.jobs list` and `run expire_holds` work; the API starts with the scheduler and serves the new routes (401 without a token) |
+
+### 6. Known issues
+- Real email and the Firestore mirror haven't run against real accounts: the owner's provider and Firebase project are pending (owner inputs 3 and 4; the live-check scripts are ready).
+- The in-process scheduler needs an API that doesn't sleep; Render's free tier does (owner input 8a).
+- The web app doesn't show notifications yet. B7 adds the bell, Firebase custom tokens and security rules, and a label for the new audit action `worker.evidence_deleted`.
+- Anonymising ended placements after 6 years isn't automated (nothing can be that old before 2032).
+
+### 7. Assumptions
+- A rejected check's `updated_at` is when it was rejected (it changes only when reopened).
+- A worker is "idle" when unlisted, not in an active placement, and nothing happened to them (edit, placement start or end) for 24 months.
+- The family isn't emailed when it cancels its own hold, and the agency isn't emailed when a hold is released (in-app only).
+
+### 8. Acceptance criteria (B6 row: "Firestore feed, emails, all jobs, cache; jobs tested with frozen clock; Firestore failure does not roll back state")
+| Item | Result |
+| --- | --- |
+| Firestore feed | **Pending**: built and tested against a fake; not signed off until `scripts.firestore_live_check` passes on the owner's Firebase project (#4) |
+| Emails | **Pending**: SMTP sender built and tested against a fake server, outbox in development; not signed off until `scripts.email_live_check` passes on the owner's provider (#3) |
+| All jobs | **Met**: the five in backend.md §8, plus refund retry and retention |
+| Cache | **Not applicable**: no public, non-personal endpoint exists (ADR 0015 item 11) |
+| Jobs tested with a frozen clock | **Met** |
+| Firestore failure doesn't roll back state | **Met** |
+
+### 9. Recommended next step
+The owner supplies #3 and #4 and runs both live checks; then B6 is signed off (#5, the 24-month idle period, and #8a, the Render plan, are still to be decided). Then the Google sign-in stage (or a decision to drop it for v1), then B7: connect the web app to the API, including the notification bell.
+
 ## B5 — Payments (2026-10-07)
 
 ### 1. Objective

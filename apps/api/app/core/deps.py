@@ -27,6 +27,8 @@ from app.modules.agencies.models import Agency
 from app.modules.agencies.service import AgencyService
 from app.modules.auth.service import AuthService
 from app.modules.families.service import FamilyService
+from app.modules.notifications.repository import PENDING as NOTIFICATIONS_PENDING
+from app.modules.notifications.service import NotificationService
 from app.modules.payments.service import PaymentService
 from app.modules.placements.service import PlacementService
 from app.modules.requests.service import RequestService
@@ -42,9 +44,12 @@ def get_settings(request: Request) -> Settings:
 
 
 async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
-    """One session per request. Services own the transaction (`async with session.begin():`)."""
+    """One session per request. Services own the transaction (`async with session.begin():`).
+    If the request wrote notifications, delivery starts once it's done (after the commit)."""
     async with request.app.state.sessionmaker() as session:
         yield session
+    if session.info.get(NOTIFICATIONS_PENDING):
+        request.app.state.notifications.kick()
 
 
 def get_rate_limiter(request: Request) -> RateLimiter:
@@ -129,6 +134,15 @@ def get_family_service(session: SessionDep, settings: SettingsDep) -> FamilyServ
     return FamilyService(session, settings)
 
 
+def get_notification_service(
+    request: Request, session: SessionDep, settings: SettingsDep
+) -> NotificationService:
+    """The feed. Delivery runs in the dispatcher and jobs; the mirror is passed so marking a
+    notification read also updates its mirrored copy."""
+    return NotificationService(session, settings, mirror=request.app.state.notifications.mirror)
+
+
+NotificationServiceDep = Annotated[NotificationService, Depends(get_notification_service)]
 RequestServiceDep = Annotated[RequestService, Depends(get_request_service)]
 PlacementServiceDep = Annotated[PlacementService, Depends(get_placement_service)]
 FamilyServiceDep = Annotated[FamilyService, Depends(get_family_service)]

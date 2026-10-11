@@ -34,6 +34,8 @@ from app.modules.admin.models import AuditAction
 from app.modules.admin.repository import AuditRepository
 from app.modules.agencies.repository import AgencyRepository
 from app.modules.families.repository import FamilyRepository
+from app.modules.notifications import messages
+from app.modules.notifications.repository import NotificationRepository
 from app.modules.payments.repository import PaymentRepository
 from app.modules.placements.models import (
     EndReason,
@@ -84,6 +86,7 @@ class PlacementService:
         self.workers = WorkerRepository(session)
         self.checks = VerificationRepository(session)
         self.audit = AuditRepository(session)
+        self.notices = NotificationRepository(session)
         self.views = PlacementViews(session, settings)
 
     # Accept (rule 2)
@@ -153,6 +156,13 @@ class PlacementService:
                 if replacement is not None:
                     replacement.status = ReplacementStatus.fulfilled
             await self.session.flush()
+            parties = await self.notices.placement_parties(placement.id)
+            await self.notices.add_many(
+                parties.agency_user_ids,
+                messages.proposal_accepted(
+                    placement.id, parties.family_name, parties.worker_name, fee_waived=fee_waived
+                ),
+            )
             summary = await self.views.summary(placement)
         log.info("placement.created", placement_id=str(placement.id), status=placement.status.value)
         if fee_waived:
@@ -183,6 +193,16 @@ class PlacementService:
         await self._move(placement, PlacementStatus.trial, actor_id, None, now)
         placement.hold_expires_at = None
         await self.session.flush()
+        parties = await self.notices.placement_parties(placement.id)
+        ends_on = placement.trial_ends_on
+        assert ends_on is not None  # noqa: S101  # set above
+        await self.notices.add(
+            parties.family_user_id, messages.trial_started_family(placement.id, parties.worker_name, ends_on)
+        )
+        await self.notices.add_many(
+            parties.agency_user_ids,
+            messages.trial_started_agency(placement.id, parties.family_name, parties.worker_name, ends_on),
+        )
 
     # Family actions
 
@@ -194,6 +214,11 @@ class PlacementService:
                 raise IllegalTransition("Only a placement on trial can be confirmed.")
             placement.confirmed_at = now
             await self._move(placement, PlacementStatus.confirmed, user.id, None, now)
+            parties = await self.notices.placement_parties(placement.id)
+            await self.notices.add_many(
+                parties.agency_user_ids,
+                messages.placement_confirmed(placement.id, parties.family_name, parties.worker_name),
+            )
             return await self.views.detail(placement, user, now)
 
     async def cancel(self, user: User, placement_id: uuid.UUID, reason: str) -> PlacementOut:
@@ -219,6 +244,7 @@ class PlacementService:
             request = await self.requests.get(placement.request_id, for_update=True)
             if request is not None:
                 request.status = RequestStatus.closed
+            await self._notify_ended(placement, user.role)
             if user.role is UserRole.super_admin:
                 summary = await self.views.summary(placement)
                 await self.audit.write(
@@ -273,6 +299,11 @@ class PlacementService:
                     placement_id=placement.id, requested_by=user.id, reason=reason, new_request_id=copy.id
                 )
             )
+            parties = await self.notices.placement_parties(placement.id)
+            await self.notices.add_many(
+                parties.agency_user_ids,
+                messages.replacement_requested(placement.id, parties.family_name, parties.worker_name),
+            )
             detail = await self.views.detail(placement, user, now)
             [new_request] = await RequestViews(self.session).for_family([copy])
             return detail, new_request
@@ -280,7 +311,8 @@ class PlacementService:
     # Jobs
 
     async def expire_holds(self) -> int:
-        """Unpaid holds past their deadline are cancelled (`payment_expired`). B6 runs this every minute."""
+        """Unpaid holds past their deadline are cancelled (`payment_expired`). The expire_holds job runs this
+        every minute."""
         now = utcnow()
         async with self.session.begin():
             expired = await self.placements.expired_holds(now)
@@ -289,6 +321,35 @@ class PlacementService:
         if expired:
             log.info("placements.holds_expired", count=len(expired))
         return len(expired)
+
+    async def send_trial_reminders(self) -> int:
+        """Both sides hear TRIAL_REMINDER_DAYS before a trial ends; run daily. A trial is reminded once
+        (dedupe key), and a day the job missed is caught up on its next run."""
+        today = lagos_date(utcnow())
+        reminded = 0
+        async with self.session.begin():
+            for placement in await self.placements.trials_ending(
+                today + timedelta(days=self.settings.TRIAL_REMINDER_DAYS)
+            ):
+                ends_on = placement.trial_ends_on
+                if ends_on is None or ends_on < today:
+                    continue  # already over: the family is asked to confirm in the app instead
+                parties = await self.notices.placement_parties(placement.id)
+                key = f"trial_ending:{placement.id}:{ends_on.isoformat()}"
+                added = await self.notices.add(
+                    parties.family_user_id,
+                    messages.trial_ending_family(placement.id, parties.worker_name, ends_on),
+                    f"{key}:{parties.family_user_id}",
+                )
+                await self.notices.add_many(
+                    parties.agency_user_ids,
+                    messages.trial_ending_agency(
+                        placement.id, parties.family_name, parties.worker_name, ends_on
+                    ),
+                    key,
+                )
+                reminded += int(added)
+        return reminded
 
     # Reading
 
@@ -356,6 +417,46 @@ class PlacementService:
                 request.id, (ProposalStatus.superseded, ProposalStatus.accepted), ProposalStatus.pending
             )
         await self.session.flush()
+        parties = await self.notices.placement_parties(placement.id)
+        expired = end_reason is EndReason.payment_expired
+        if expired:
+            await self.notices.add(
+                parties.family_user_id,
+                messages.hold_expired_family(
+                    placement.request_id, parties.worker_name, self.settings.PAYMENT_HOLD_MINUTES
+                ),
+            )
+        await self.notices.add_many(
+            parties.agency_user_ids,
+            messages.hold_released_agency(
+                placement.id, parties.family_name, parties.worker_name, expired=expired
+            ),
+        )
+
+    async def _notify_ended(self, placement: Placement, by: UserRole) -> None:
+        """The other side hears; when HelpVerified ends it, both do."""
+        parties = await self.notices.placement_parties(placement.id)
+        who = {UserRole.family: "the family", UserRole.agency_admin: "the agency"}.get(by, "HelpVerified")
+        if by is not UserRole.family:
+            await self.notices.add(
+                parties.family_user_id,
+                messages.placement_ended(
+                    messages.FAMILY_PLACEMENT.format(id=placement.id),
+                    parties.family_name,
+                    parties.worker_name,
+                    who,
+                ),
+            )
+        if by is not UserRole.agency_admin:
+            await self.notices.add_many(
+                parties.agency_user_ids,
+                messages.placement_ended(
+                    messages.AGENCY_PLACEMENT.format(id=placement.id),
+                    parties.family_name,
+                    parties.worker_name,
+                    who,
+                ),
+            )
 
     def _trial_fields(self, request: Request, now: datetime) -> dict[str, object]:
         starts = lagos_date(now)

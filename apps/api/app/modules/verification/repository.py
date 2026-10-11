@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ValidationFailed
+from app.modules.placements.models import ACTIVE, Placement
 from app.modules.verification.models import (
     KINDS,
     DocumentAccess,
@@ -17,7 +18,7 @@ from app.modules.verification.models import (
     VerificationKind,
     VerificationStatus,
 )
-from app.modules.workers.models import Worker
+from app.modules.workers.models import ListingStatus, Worker
 
 
 class VerificationRepository:
@@ -140,8 +141,9 @@ class VerificationRepository:
         self.session.add(DocumentAccess(document_id=document_id, user_id=user_id, purpose=purpose, ip=ip))
         await self.session.flush()
 
-    async def expire_lapsed(self, now: datetime) -> int:
-        """Verified checks past expires_at become `expired`; the trigger then delists their workers."""
+    async def expire_lapsed(self, now: datetime) -> list[tuple[uuid.UUID, VerificationKind]]:
+        """Verified checks past expires_at become `expired`; the trigger then delists their workers.
+        Returns (worker_id, kind) for each check that expired."""
         result = await self.session.execute(
             update(VerificationItem)
             .where(
@@ -150,5 +152,83 @@ class VerificationRepository:
                 VerificationItem.expires_at <= now,
             )
             .values(status=VerificationStatus.expired)
+            .returning(VerificationItem.worker_id, VerificationItem.kind)
+        )
+        return [(worker_id, kind) for worker_id, kind in result]
+
+    # Retention (security-and-compliance.md §1)
+
+    async def delete_rejected_evidence(self, rejected_before: datetime, now: datetime) -> int:
+        """Soft-deletes evidence on checks rejected before `rejected_before`. A rejected check changes
+        only when it reopens (and leaves `rejected`), so its updated_at is when it was rejected."""
+        rejected = select(VerificationItem.id).where(
+            VerificationItem.status == VerificationStatus.rejected,
+            VerificationItem.updated_at < rejected_before,
+        )
+        result = await self.session.execute(
+            update(VerificationDocument)
+            .where(VerificationDocument.deleted_at.is_(None), VerificationDocument.item_id.in_(rejected))
+            .values(deleted_at=now)
         )
         return int(getattr(result, "rowcount", 0) or 0)
+
+    async def idle_workers(self, idle_before: datetime) -> list[Worker]:
+        """Unlisted workers with evidence on file, no active placement, and nothing happening to them (no
+        edit, no placement starting or ending) since `idle_before`. Locked; busy rows are skipped."""
+        last_placement = (
+            select(func.max(func.coalesce(Placement.ended_at, Placement.created_at)))
+            .where(Placement.worker_id == Worker.id)
+            .scalar_subquery()
+        )
+        active = select(Placement.id).where(Placement.worker_id == Worker.id, Placement.status.in_(ACTIVE))
+        evidence = (
+            select(VerificationDocument.id)
+            .join(VerificationItem, VerificationItem.id == VerificationDocument.item_id)
+            .where(VerificationItem.worker_id == Worker.id, VerificationDocument.deleted_at.is_(None))
+        )
+        rows = await self.session.scalars(
+            select(Worker)
+            .where(
+                Worker.listing_status != ListingStatus.listed,
+                ~active.exists(),
+                evidence.exists(),
+                func.greatest(Worker.updated_at, func.coalesce(last_placement, Worker.updated_at))
+                < idle_before,
+            )
+            .with_for_update(of=Worker, skip_locked=True)
+        )
+        return list(rows)
+
+    async def delete_worker_evidence(self, worker_id: uuid.UUID, now: datetime) -> int:
+        """Soft-deletes all of a worker's evidence and sends its verified checks to `expired`, so the worker
+        can only be listed again after fresh evidence is checked (rule 1)."""
+        items = select(VerificationItem.id).where(VerificationItem.worker_id == worker_id)
+        result = await self.session.execute(
+            update(VerificationDocument)
+            .where(VerificationDocument.deleted_at.is_(None), VerificationDocument.item_id.in_(items))
+            .values(deleted_at=now)
+        )
+        await self.session.execute(
+            update(VerificationItem)
+            .where(
+                VerificationItem.worker_id == worker_id,
+                VerificationItem.status == VerificationStatus.verified,
+            )
+            .values(status=VerificationStatus.expired, verified_at=None, verified_by=None, expires_at=None)
+        )
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    async def unpurged_documents(self, limit: int) -> list[VerificationDocument]:
+        """Deleted evidence still in Cloudinary, oldest first."""
+        rows = await self.session.scalars(
+            select(VerificationDocument)
+            .where(VerificationDocument.deleted_at.is_not(None), VerificationDocument.purged_at.is_(None))
+            .order_by(VerificationDocument.deleted_at)
+            .limit(limit)
+        )
+        return list(rows)
+
+    async def mark_purged(self, document_id: uuid.UUID, now: datetime) -> None:
+        await self.session.execute(
+            update(VerificationDocument).where(VerificationDocument.id == document_id).values(purged_at=now)
+        )

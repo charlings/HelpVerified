@@ -34,6 +34,8 @@ from app.integrations.paystack import PaystackApi, valid_signature
 from app.modules.agencies.models import Agency, AgencyStatus, Subscription, SubscriptionStatus
 from app.modules.agencies.repository import AgencyRepository
 from app.modules.families.repository import FamilyRepository
+from app.modules.notifications import messages
+from app.modules.notifications.repository import NotificationRepository
 from app.modules.payments.models import Payment, PaymentKind, PaymentStatus
 from app.modules.payments.repository import PaymentRepository, WebhookEventRepository
 from app.modules.payments.schemas import BillingSubscription, PaymentOut, PaymentVerification
@@ -95,6 +97,7 @@ class PaymentService:
         self.families = FamilyRepository(session)
         self.agencies = AgencyRepository(session)
         self.users = UserRepository(session)
+        self.notices = NotificationRepository(session)
 
     # Placement fee (PlacementService.accept calls this as its PaymentGateway)
 
@@ -181,7 +184,8 @@ class PaymentService:
         )
 
     async def reconcile_subscriptions(self) -> int:
-        """Brings each Paystack-linked subscription in line with Paystack. B6 runs this hourly."""
+        """Brings each Paystack-linked subscription in line with Paystack. The subscription_sync job runs
+        this hourly."""
         async with self.session.begin():
             linked = await self.agencies.linked_subscriptions()
         changed = 0
@@ -197,11 +201,22 @@ class PaymentService:
                 current = await self.agencies.subscription(sub.agency_id, for_update=True)
                 if current is None or status is None:
                     continue
-                if (current.status, current.current_period_end) != (status, remote.next_payment_date):
+                # Paystack may omit the next payment date (e.g. a failed renewal); keep the one we have.
+                period_end = remote.next_payment_date or current.current_period_end
+                if (current.status, current.current_period_end) != (status, period_end):
+                    await self._notify_lapse(current, status)
                     current.status = status
-                    current.current_period_end = remote.next_payment_date or current.current_period_end
+                    current.current_period_end = period_end
                     changed += 1
         return changed
+
+    async def _notify_lapse(self, sub: Subscription, to: SubscriptionStatus) -> None:
+        """The agency hears when its subscription stops being active (it can't list or propose then)."""
+        if to in (SubscriptionStatus.past_due, SubscriptionStatus.cancelled) and sub.status is not to:
+            await self.notices.add_many(
+                await self.notices.agency_user_ids(sub.agency_id),
+                messages.subscription_lapsed(ended=to is SubscriptionStatus.cancelled),
+            )
 
     # Reading
 
@@ -313,6 +328,11 @@ class PaymentService:
                     payment.paid_at = verified.paid_at or now
                     payment.refunded_at = now
                     refund = True
+                    parties = await self.notices.placement_parties(placement.id)
+                    await self.notices.add(
+                        parties.family_user_id,
+                        messages.payment_refunded(parties.worker_name, payment.amount_kobo),
+                    )
             else:
                 payment.status = PaymentStatus.success
                 payment.paid_at = verified.paid_at or now
@@ -321,11 +341,41 @@ class PaymentService:
             await self.session.flush()
             log.info("payment.settled", payment_id=str(payment.id), status=payment.status.value)
         if refund:
-            try:
-                await self.paystack.refund(reference)
-            except PaymentProviderError:
-                # Recorded as refunded; the money still has to go back. B6 adds a retry job.
-                log.error("payment.refund_failed", reference=reference)
+            await self._send_refund(payment.id)
+
+    async def _send_refund(self, payment_id: uuid.UUID) -> bool:
+        """Asks Paystack to return a refunded payment's money; the refund_retry job calls this again until
+        Paystack accepts. The attempt is counted before the call, so a crash can't retry it forever."""
+        async with self.session.begin():
+            payment = await self.payments.get(payment_id, for_update=True)
+            if payment is None or payment.refund_sent_at is not None:
+                return True
+            payment.refund_attempts += 1
+            reference, attempts = payment.paystack_reference, payment.refund_attempts
+        try:
+            await self.paystack.refund(reference)
+        except PaymentProviderError:
+            if attempts >= self.settings.REFUND_MAX_ATTEMPTS:
+                # An admin refunds it from the Paystack dashboard; the log names the payment.
+                log.error("payment.refund_gave_up", payment_id=str(payment_id), reference=reference)
+            else:
+                log.error("payment.refund_failed", payment_id=str(payment_id), reference=reference)
+            return False
+        async with self.session.begin():
+            payment = await self.payments.get(payment_id, for_update=True)
+            assert payment is not None  # noqa: S101
+            payment.refund_sent_at = utcnow()
+        log.info("payment.refund_sent", payment_id=str(payment_id))
+        return True
+
+    async def retry_refunds(self) -> int:
+        """Refunds Paystack hasn't accepted yet, until REFUND_MAX_ATTEMPTS. Returns how many went through."""
+        async with self.session.begin():
+            waiting = await self.payments.refunds_unsent(self.settings.REFUND_MAX_ATTEMPTS)
+        sent = 0
+        for payment_id in waiting:
+            sent += int(await self._send_refund(payment_id))
+        return sent
 
     async def _activate(self, agency_id: uuid.UUID, paid_at: datetime) -> None:
         sub = await self.agencies.subscription(agency_id, for_update=True)
@@ -380,6 +430,7 @@ class PaymentService:
             if customer_code:
                 sub.paystack_customer_code = customer_code
             if status is not None:
+                await self._notify_lapse(sub, status)
                 sub.status = status
             if next_payment is not None:
                 sub.current_period_end = next_payment

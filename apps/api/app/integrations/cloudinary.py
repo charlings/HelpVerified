@@ -46,6 +46,8 @@ class Cloudinary(Protocol):
 
     def private_download_url(self, asset: Asset, expires_at: datetime, timestamp: int) -> str: ...
 
+    async def destroy(self, asset: Asset, timestamp: int) -> None: ...
+
 
 def sign(params: dict[str, str | int], api_secret: str) -> str:
     to_sign = "&".join(f"{key}={params[key]}" for key in sorted(params) if params[key] != "")
@@ -99,3 +101,22 @@ class CloudinaryClient:
         }
         query = {**params, "signature": sign(params, self._api_secret), "api_key": self.api_key}
         return f"{API_BASE}/{self.cloud_name}/{asset.resource_type}/download?{urlencode(query)}"
+
+    async def destroy(self, asset: Asset, timestamp: int) -> None:
+        """Deletes the file and its cached copies (B6 retention). "not found" counts as done, so a retry
+        after a lost response is harmless. Raises httpx.HTTPError on failure; the job tries again."""
+        params: dict[str, str | int] = {
+            "public_id": asset.public_id,
+            "type": asset.type,
+            "invalidate": "true",
+            "timestamp": timestamp,
+        }
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{API_BASE}/{self.cloud_name}/{asset.resource_type}/destroy",
+                data={**params, "signature": sign(params, self._api_secret), "api_key": self.api_key},
+            )
+        response.raise_for_status()
+        result = response.json().get("result")
+        if result not in ("ok", "not found"):
+            raise httpx.HTTPStatusError(f"destroy: {result}", request=response.request, response=response)

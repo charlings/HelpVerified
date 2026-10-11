@@ -19,6 +19,7 @@ class AuditAction(StrEnum):
     worker_check_flagged = "worker.check_flagged"
     document_viewed = "document.viewed"
     placement_ended = "placement.ended"
+    worker_evidence_deleted = "worker.evidence_deleted"  # retention job (B6); actor is the system
 
 
 class AuditLog(CreatedAt, Base):

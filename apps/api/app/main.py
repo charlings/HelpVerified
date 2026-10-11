@@ -20,12 +20,17 @@ from app.core.middleware import BodySizeLimitMiddleware, RequestContextMiddlewar
 from app.core.rate_limit import RateLimiter
 from app.db.session import create_engine, create_sessionmaker
 from app.integrations.cloudinary import Cloudinary, CloudinaryClient
-from app.integrations.email import EmailSender, OutboxEmailSender
+from app.integrations.email import EmailSender, email_sender_from
+from app.integrations.firestore import NotificationMirror, mirror_from
 from app.integrations.paystack import PaystackApi, PaystackClient
+from app.jobs.registry import JobContext
+from app.jobs.scheduler import JobRunner, start_scheduler
 from app.modules.admin.router import router as admin_router
 from app.modules.agencies.router import router as agencies_router
 from app.modules.auth.router import router as auth_router
 from app.modules.families.router import router as families_router
+from app.modules.notifications.dispatcher import NotificationDispatcher
+from app.modules.notifications.router import router as notifications_router
 from app.modules.payments.router import router as payments_router
 from app.modules.placements.router import router as placements_router
 from app.modules.requests.router import router as requests_router
@@ -45,7 +50,12 @@ def create_app(
     email_sender: EmailSender | None = None,
     cloudinary: Cloudinary | None = None,
     paystack: PaystackApi | None = None,
+    mirror: NotificationMirror | None = None,
+    *,
+    deliver_immediately: bool = True,
 ) -> FastAPI:
+    """Integrations default to the real clients settings describe; tests pass fakes. With
+    `deliver_immediately=False` notifications wait for an explicit `app.state.notifications.drain()`."""
     settings = settings or get_settings()
     configure_logging(settings.LOG_LEVEL)
 
@@ -57,23 +67,41 @@ def create_app(
         app.state.rate_limiter = RateLimiter(redis)
         app.state.idempotency = IdempotencyStore(redis, timedelta(hours=settings.IDEMPOTENCY_TTL_HOURS))
         app.state.paystack = paystack or PaystackClient(settings.PAYSTACK_SECRET_KEY.get_secret_value())
-        app.state.email_sender = email_sender or OutboxEmailSender(
-            settings.EMAIL_OUTBOX_DIR, settings.EMAIL_FROM
-        )
+        app.state.email_sender = email_sender or email_sender_from(settings)
         app.state.cloudinary = cloudinary or CloudinaryClient(
             settings.CLOUDINARY_CLOUD_NAME,
             settings.CLOUDINARY_API_KEY,
             settings.CLOUDINARY_API_SECRET.get_secret_value(),
         )
+        app.state.notifications = NotificationDispatcher(
+            app.state.sessionmaker,
+            settings,
+            app.state.email_sender,
+            mirror or mirror_from(settings),
+            immediate=deliver_immediately,
+        )
+        scheduler = None
+        if settings.JOBS_ENABLED:
+            context = JobContext(
+                app.state.sessionmaker,
+                settings,
+                app.state.paystack,
+                app.state.cloudinary,
+                app.state.notifications,
+            )
+            scheduler = start_scheduler(JobRunner(context, redis))
         try:
             yield
         finally:
+            if scheduler is not None:
+                scheduler.shutdown(wait=False)
+            await app.state.notifications.close()
             await redis.aclose()
             await engine.dispose()
 
     app = FastAPI(
         title="HelpVerified API",
-        version="0.2.0",
+        version="0.3.0",
         description="Families hire agency-verified nannies, drivers and cleaners.",
         lifespan=lifespan,
     )
@@ -107,6 +135,7 @@ def create_app(
         placements_router,
         families_router,
         payments_router,
+        notifications_router,
         admin_router,
     ):
         app.include_router(router, prefix=API_PREFIX)

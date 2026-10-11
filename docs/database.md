@@ -9,6 +9,7 @@ PostgreSQL 16. Migrations in `apps/api/app/db/migrations/versions/`, with readab
 | `0003` agencies, workers | B3 | Six enums; `agencies`, `agency_members`, `subscriptions`, `workers`, `verification_items`, `verification_documents`, `document_access_log`, `audit_log`; **rule 1 triggers** |
 | `0004` requests, placements | B4 | Five enums; `families`, `requests`, `proposals`, `placements`, `placement_events`, `replacement_requests`; **rule 2 index** |
 | `0005` payments | B5 | `payment_kind`, `payment_status`; `payments`, `webhook_events` |
+| `0006` notifications, jobs | B6 | `notifications`; `payments.refund_sent_at`, `refund_attempts`; `verification_documents.purged_at` |
 
 ## Entity-relationship diagram
 
@@ -36,6 +37,24 @@ erDiagram
     placements ||--o{ payments : "fee"
     agencies ||--o{ payments : "subscription"
     users ||--o{ payments : pays
+    users ||--o{ notifications : "is told"
+
+    notifications {
+        uuid id PK
+        uuid user_id FK
+        text kind "proposal_received, trial_ending ..."
+        text title
+        text body
+        text link "a web app path"
+        text dedupe_key UK "job reminders: once"
+        boolean email "also emailed"
+        timestamptz emailed_at
+        timestamptz mirrored_at "Firestore"
+        timestamptz read_at
+        smallint attempts
+        timestamptz next_attempt_at "NULL: delivered or given up"
+        text last_error "error class only"
+    }
 
     payments {
         uuid id PK
@@ -48,6 +67,8 @@ erDiagram
         payment_status status "pending | success | failed | refunded"
         timestamptz paid_at
         timestamptz refunded_at
+        timestamptz refund_sent_at "Paystack accepted the refund"
+        smallint refund_attempts
     }
     webhook_events {
         uuid id PK
@@ -157,6 +178,7 @@ erDiagram
         text format "jpg | png | pdf"
         int bytes "at most 10 MB"
         timestamptz deleted_at "soft delete"
+        timestamptz purged_at "destroyed in Cloudinary"
     }
     document_access_log {
         bigint id PK
@@ -210,3 +232,6 @@ erDiagram
 | One open checkout per hold | Partial unique index `payments_one_pending_fee_per_placement` |
 | Money is positive integer kobo in NGN; a successful payment has a time | `ck_payments_amount`, `ck_payments_currency`, `ck_payments_paid_at` |
 | A fee belongs to a placement, a subscription to an agency | `ck_payments_kind_target` |
+| A notification exists exactly when its event was committed | Written in the event's own transaction; delivery (email, Firestore) runs after commit and only updates the notification's delivery columns (ADR 0015) |
+| A job's reminder is written once | `uq_notifications_dedupe_key` (insert … on conflict do nothing) |
+| Delivery finds due rows quickly; two runs never send one row twice | Partial index `notifications_due`; rows are leased with `FOR UPDATE SKIP LOCKED` |

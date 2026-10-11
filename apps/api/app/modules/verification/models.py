@@ -90,6 +90,7 @@ class VerificationDocument(CreatedAt, Base):
     bytes: Mapped[int] = mapped_column(Integer)
     uploaded_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # destroyed in Cloudinary
 
 
 class DocumentAccess(CreatedAt, Base):

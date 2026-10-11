@@ -41,16 +41,19 @@ TEST_ENV = {
     # Not a real key: every test talks to tests.fakes.FakePaystack.
     "PAYSTACK_SECRET_KEY": "sk_test_fake_not_a_real_key_0123456789",
     "PAYSTACK_AGENCY_PLAN_CODE": "PLN_test_agency_monthly",
+    # Tests run jobs themselves. The `api` app mirrors notifications to tests.fakes.FakeMirror.
+    "JOBS_ENABLED": "false",
 }
 os.environ.update(TEST_ENV)
 
 from app.core.config import Settings, get_settings, load_settings  # noqa: E402
 from app.db.session import create_sessionmaker  # noqa: E402
 from app.main import create_app  # noqa: E402
-from tests.fakes import FakeCloudinary, FakePaystack, MemoryEmailSender  # noqa: E402
+from tests.fakes import FakeCloudinary, FakeMirror, FakePaystack, MemoryEmailSender  # noqa: E402
 
 ALEMBIC_INI = Path(__file__).parents[1] / "alembic.ini"
 TABLES = (
+    "notifications",
     "webhook_events",
     "payments",
     "replacement_requests",
@@ -189,13 +192,13 @@ def _session_cloudinary() -> FakeCloudinary:
 
 @pytest.fixture
 def outbox(_session_outbox: MemoryEmailSender) -> MemoryEmailSender:
-    _session_outbox.sent.clear()
+    _session_outbox.reset()
     return _session_outbox
 
 
 @pytest.fixture
 def cloudinary(_session_cloudinary: FakeCloudinary) -> FakeCloudinary:
-    _session_cloudinary.assets.clear()
+    _session_cloudinary.reset()
     return _session_cloudinary
 
 
@@ -211,11 +214,23 @@ def paystack(_session_paystack: FakePaystack) -> FakePaystack:
 
 
 @pytest.fixture(scope="session")
+def _session_mirror() -> FakeMirror:
+    return FakeMirror()
+
+
+@pytest.fixture
+def mirror(_session_mirror: FakeMirror) -> FakeMirror:
+    _session_mirror.reset()
+    return _session_mirror
+
+
+@pytest.fixture(scope="session")
 def shared_api(
     db_ready: None,
     _session_outbox: MemoryEmailSender,
     _session_cloudinary: FakeCloudinary,
     _session_paystack: FakePaystack,
+    _session_mirror: FakeMirror,
 ) -> Iterator[TestClient]:
     """One running app for the whole session. Closing pooled PostgreSQL connections costs seconds
     on Windows, so tests share this app's pool; `api` resets its state between tests."""
@@ -225,9 +240,18 @@ def shared_api(
         email_sender=_session_outbox,
         cloudinary=_session_cloudinary,
         paystack=_session_paystack,
+        mirror=_session_mirror,
+        deliver_immediately=False,  # tests deliver with `deliver(api)`, so nothing runs between tests
     )
     with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
+
+
+def deliver(client: TestClient) -> int:
+    """Delivers the app's due notifications now (the dispatcher's background delivery is off in tests)."""
+    drain = client.app.state.notifications.drain  # type: ignore[attr-defined]
+    assert client.portal is not None
+    return int(client.portal.call(drain))
 
 
 def reset_app_connections(client: TestClient) -> None:
@@ -241,7 +265,11 @@ ApiFactory = Callable[..., TestClient]
 
 @pytest.fixture
 def make_api(
-    clean_state: None, outbox: MemoryEmailSender, cloudinary: FakeCloudinary, paystack: FakePaystack
+    clean_state: None,
+    outbox: MemoryEmailSender,
+    cloudinary: FakeCloudinary,
+    paystack: FakePaystack,
+    mirror: FakeMirror,
 ) -> Iterator[ApiFactory]:
     """Builds a separate running app with settings overrides (slower: it opens its own connections)."""
     clients: list[TestClient] = []
@@ -249,7 +277,14 @@ def make_api(
     def build(**overrides: object) -> TestClient:
         get_settings.cache_clear()
         settings = load_settings().model_copy(update=overrides)
-        app = create_app(settings, email_sender=outbox, cloudinary=cloudinary, paystack=paystack)
+        app = create_app(
+            settings,
+            email_sender=outbox,
+            cloudinary=cloudinary,
+            paystack=paystack,
+            mirror=mirror,
+            deliver_immediately=False,
+        )
         test_client = TestClient(app, raise_server_exceptions=False)
         test_client.__enter__()
         clients.append(test_client)
@@ -267,6 +302,7 @@ def api(
     outbox: MemoryEmailSender,
     cloudinary: FakeCloudinary,
     paystack: FakePaystack,
+    mirror: FakeMirror,
 ) -> TestClient:
     """The running app with default test settings, empty data, no cookies and fresh fakes."""
     shared_api.cookies.clear()

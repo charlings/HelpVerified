@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import utcnow
@@ -32,6 +33,8 @@ from app.modules.admin.repository import AuditRepository
 from app.modules.agencies.models import Agency
 from app.modules.agencies.repository import AgencyRepository
 from app.modules.agencies.service import is_active
+from app.modules.notifications import messages
+from app.modules.notifications.repository import NotificationRepository
 from app.modules.users.models import User, UserRole
 from app.modules.verification.models import (
     KINDS,
@@ -86,6 +89,7 @@ class VerificationService:
         self.workers = WorkerRepository(session)
         self.agencies = AgencyRepository(session)
         self.audit = AuditRepository(session)
+        self.notices = NotificationRepository(session)
 
     # Reading
 
@@ -290,12 +294,80 @@ class VerificationService:
             return worker
 
     async def expire_lapsed(self) -> int:
-        """Marks verified checks past their expiry `expired` (the trigger delists). Scheduled daily in B6."""
+        """Marks verified checks past their expiry `expired` (the trigger delists) and tells each agency
+        which of its workers came off the list. The verification_expiry job runs this daily."""
         async with self.session.begin():
-            count = await self.checks.expire_lapsed(utcnow())
-        if count:
-            log.info("verification.expired", count=count)
-        return count
+            expired = await self.checks.expire_lapsed(utcnow())
+            by_worker: dict[uuid.UUID, list[VerificationKind]] = {}
+            for worker_id, kind in expired:
+                by_worker.setdefault(worker_id, []).append(kind)
+            for worker_id, kinds in by_worker.items():
+                worker = await self.workers.get(worker_id)
+                assert worker is not None  # noqa: S101  # FK
+                await self.notices.add_many(
+                    await self.notices.agency_user_ids(worker.agency_id),
+                    messages.checks_expired(worker.id, worker.full_name, sorted(kinds, key=KINDS.index)),
+                )
+        if expired:
+            log.info("verification.expired", count=len(expired), workers=len(by_worker))
+        return len(expired)
+
+    # Retention (security-and-compliance.md §1, NDPA storage limitation)
+
+    async def apply_retention(self) -> int:
+        """Soft-deletes evidence kept longer than needed: rejected checks' evidence after
+        RETENTION_REJECTED_EVIDENCE_DAYS, and all evidence of unlisted workers idle for
+        RETENTION_IDLE_WORKER_MONTHS (their verified checks expire, so relisting needs fresh checks).
+        Files are destroyed in Cloudinary by `purge_deleted_documents`. Returns documents deleted."""
+        now = utcnow()
+        async with self.session.begin():
+            rejected = await self.checks.delete_rejected_evidence(
+                now - timedelta(days=self.settings.RETENTION_REJECTED_EVIDENCE_DAYS), now
+            )
+            idle = 0
+            for worker in await self.checks.idle_workers(
+                add_months(now, -self.settings.RETENTION_IDLE_WORKER_MONTHS)
+            ):
+                idle += await self.checks.delete_worker_evidence(worker.id, now)
+                await self.audit.write(
+                    None,
+                    AuditAction.worker_evidence_deleted,
+                    "worker",
+                    worker.id,
+                    {
+                        "label": worker.full_name,
+                        "reason": f"No placement or change for {self.settings.RETENTION_IDLE_WORKER_MONTHS} "
+                        "months (retention policy)",
+                    },
+                )
+        if rejected or idle:
+            log.info("retention.evidence_deleted", rejected=rejected, idle_workers=idle)
+        return rejected + idle
+
+    async def purge_deleted_documents(self, limit: int = 100) -> int:
+        """Destroys soft-deleted evidence in Cloudinary. A failure is logged and retried on the next run."""
+        async with self.session.begin():
+            documents = await self.checks.unpurged_documents(limit)
+        purged = 0
+        for document in documents:
+            asset = Asset(
+                document.cloudinary_public_id,
+                "authenticated",
+                document.resource_type,
+                document.format,
+                document.bytes,
+            )
+            try:
+                await self.cloudinary.destroy(asset, int(utcnow().timestamp()))
+            except httpx.HTTPError as exc:
+                log.warning("document.purge_failed", document_id=str(document.id), error=type(exc).__name__)
+                continue
+            async with self.session.begin():
+                await self.checks.mark_purged(document.id, utcnow())
+            purged += 1
+        if purged:
+            log.info("documents.purged", count=purged)
+        return purged
 
     # Admin
 
@@ -320,6 +392,10 @@ class VerificationService:
                 "worker",
                 worker.id,
                 {"label": worker.full_name, "kind": kind.value, "reason": reason},
+            )
+            await self.notices.add_many(
+                await self.notices.agency_user_ids(worker.agency_id),
+                messages.check_flagged(worker.id, worker.full_name, kind, reason),
             )
             return worker
 

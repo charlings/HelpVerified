@@ -12,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    SmallInteger,
     Text,
     UniqueConstraint,
     text,
@@ -70,6 +71,9 @@ class Payment(Timestamps, Base):
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Paystack accepted the refund; while NULL on a refunded payment, the refund_retry job tries again.
+    refund_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refund_attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
 
 
 class WebhookEvent(Base):

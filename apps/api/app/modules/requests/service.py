@@ -25,6 +25,8 @@ from app.modules.agencies.repository import AgencyRepository
 from app.modules.agencies.service import is_active
 from app.modules.families.models import Family
 from app.modules.families.repository import FamilyRepository
+from app.modules.notifications import messages
+from app.modules.notifications.repository import NotificationRepository
 from app.modules.placements.repository import PlacementRepository
 from app.modules.requests.models import Proposal, ProposalStatus, Request, RequestStatus
 from app.modules.requests.repository import RequestRepository
@@ -58,6 +60,7 @@ class RequestService:
         self.workers = WorkerRepository(session)
         self.checks = VerificationRepository(session)
         self.placements = PlacementRepository(session)
+        self.notices = NotificationRepository(session)
         self.views = RequestViews(session)
 
     # Family side
@@ -200,6 +203,12 @@ class RequestService:
             else:
                 proposal = await self.requests.add_proposal(
                     Proposal(request_id=request.id, worker_id=worker.id, agency_id=agency.id, note=note)
+                )
+            family_user_id = await self.notices.family_user_id(request.family_id)
+            if family_user_id is not None:
+                await self.notices.add(
+                    family_user_id,
+                    messages.proposal_received(request.id, agency.name, worker.full_name, request.role.value),
                 )
             [out] = await self.views.agency_proposals([proposal])
             return out

@@ -68,10 +68,33 @@ class Settings(BaseSettings):
     PLACEMENT_FEE_KOBO: int = Field(default=2_000_000, gt=0)  # NGN 20,000
     AGENCY_SUBSCRIPTION_KOBO: int = Field(default=2_500_000, gt=0)  # NGN 25,000 a month; must match the plan
 
-    # Email: "outbox" writes messages to EMAIL_OUTBOX_DIR (development and test only). Providers arrive in B6.
-    EMAIL_PROVIDER: Literal["outbox"] = "outbox"
+    # Email (B6). "outbox" writes messages to EMAIL_OUTBOX_DIR (development and test only); "smtp" sends
+    # through any provider's SMTP relay (Resend, Brevo, Postmark, SendGrid...): changing provider is config.
+    EMAIL_PROVIDER: Literal["outbox", "smtp"] = "outbox"
     EMAIL_FROM: str = "HelpVerified <no-reply@helpverified.local>"
     EMAIL_OUTBOX_DIR: str = ".outbox"
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = Field(default=587, gt=0)  # STARTTLS; 465 means TLS from the first byte
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: SecretStr | None = None
+
+    # Notifications (B6). The feed lives in PostgreSQL; "firestore" also mirrors it for the web app's live
+    # feed. FIREBASE_CREDENTIALS_FILE is a service-account JSON kept outside the repository.
+    NOTIFICATIONS_MIRROR: Literal["none", "firestore"] = "none"
+    FIREBASE_PROJECT_ID: str | None = None
+    FIREBASE_CREDENTIALS_FILE: str | None = None
+    NOTIFICATION_MAX_ATTEMPTS: int = Field(default=8, gt=0)
+
+    # Jobs (B6): run in the API process; a Redis lock keeps each run to one instance.
+    JOBS_ENABLED: bool = True
+    TRIAL_REMINDER_DAYS: int = Field(
+        default=2, ge=1
+    )  # remind both sides this many days before the trial ends
+    REFUND_MAX_ATTEMPTS: int = Field(default=10, gt=0)
+
+    # Retention (security-and-compliance.md §1, NDPA storage limitation). Proposed defaults; owner to confirm.
+    RETENTION_REJECTED_EVIDENCE_DAYS: int = Field(default=90, gt=0)
+    RETENTION_IDLE_WORKER_MONTHS: int = Field(default=24, gt=0)
 
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     MAX_BODY_BYTES: int = Field(default=1_048_576, gt=0)
@@ -86,7 +109,22 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _no_outbox_in_deployed_envs(self) -> Settings:
         if self.EMAIL_PROVIDER == "outbox" and self.is_deployed:
-            raise ValueError("EMAIL_PROVIDER=outbox is for development only; configure a provider (B6)")
+            raise ValueError("EMAIL_PROVIDER=outbox is for development only; set EMAIL_PROVIDER=smtp")
+        return self
+
+    @model_validator(mode="after")
+    def _providers_complete(self) -> Settings:
+        """A chosen provider must have everything it needs, so a typo fails at startup, not at first send."""
+        if self.EMAIL_PROVIDER == "smtp":
+            missing = [k for k in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD") if not getattr(self, k)]
+            if missing:
+                raise ValueError(f"EMAIL_PROVIDER=smtp needs {', '.join(missing)}")
+        if self.NOTIFICATIONS_MIRROR == "firestore":
+            missing = [
+                k for k in ("FIREBASE_PROJECT_ID", "FIREBASE_CREDENTIALS_FILE") if not getattr(self, k)
+            ]
+            if missing:
+                raise ValueError(f"NOTIFICATIONS_MIRROR=firestore needs {', '.join(missing)}")
         return self
 
     @model_validator(mode="after")

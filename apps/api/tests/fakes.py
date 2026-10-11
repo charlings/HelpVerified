@@ -5,9 +5,12 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
+import httpx
+
 from app.core.errors import PaymentProviderError
 from app.integrations.cloudinary import Asset, SignedUpload, sign
 from app.integrations.email import EmailMessage
+from app.integrations.firestore import MirroredNotification, MirrorError
 from app.integrations.payments import Checkout
 from app.integrations.paystack import Initialized, RemoteSubscription, Verified
 
@@ -21,6 +24,13 @@ class FakeCloudinary:
         self.api_key = api_key
         self.api_secret = api_secret
         self.assets: dict[str, Asset] = {}
+        self.destroyed: list[str] = []
+        self.down = False
+
+    def reset(self) -> None:
+        self.assets.clear()
+        self.destroyed.clear()
+        self.down = False
 
     def sign_upload(self, folder: str, delivery_type: str, timestamp: int) -> SignedUpload:
         params: dict[str, str | int] = {"folder": folder, "timestamp": timestamp, "type": delivery_type}
@@ -48,15 +58,31 @@ class FakeCloudinary:
         query = {"public_id": asset.public_id, "expires_at": int(expires_at.timestamp()), "signature": "fake"}
         return f"{FAKE_DOWNLOAD_HOST}/download?{urlencode(query)}"
 
+    async def destroy(self, asset: Asset, timestamp: int) -> None:
+        if self.down:
+            raise httpx.ConnectError("cloudinary down")
+        self.assets.pop(asset.public_id, None)
+        self.destroyed.append(asset.public_id)
+
 
 class MemoryEmailSender:
     """Keeps sent messages in a list instead of delivering them."""
 
     def __init__(self) -> None:
         self.sent: list[EmailMessage] = []
+        self.down = False  # True: every send fails, as a provider outage would
+
+    def reset(self) -> None:
+        self.sent.clear()
+        self.down = False
 
     async def send(self, message: EmailMessage) -> None:
+        if self.down:
+            raise ConnectionError("email provider down")
         self.sent.append(message)
+
+    def to(self, address: str) -> list[EmailMessage]:
+        return [m for m in self.sent if m.to.lower() == address.lower()]
 
     def last(self, kind: str, to: str | None = None) -> EmailMessage:
         for message in reversed(self.sent):
@@ -78,12 +104,14 @@ class FakePaystack:
         self.refunds: list[str] = []
         self.subscriptions: dict[str, RemoteSubscription] = {}
         self.down = False
+        self.refuse_refunds = False  # only refunds fail (verify still works)
 
     def reset(self) -> None:
         self.transactions.clear()
         self.refunds.clear()
         self.subscriptions.clear()
         self.down = False
+        self.refuse_refunds = False
 
     def _check(self) -> None:
         if self.down:
@@ -129,6 +157,8 @@ class FakePaystack:
 
     async def refund(self, reference: str) -> None:
         self._check()
+        if self.refuse_refunds:
+            raise PaymentProviderError()
         self.refunds.append(reference)
 
     async def fetch_subscription(self, code: str) -> RemoteSubscription:
@@ -151,3 +181,23 @@ class FakePayments:
 class FailingEmailSender:
     async def send(self, message: EmailMessage) -> None:
         raise ConnectionError("email provider down")
+
+
+class FakeMirror:
+    """Firestore in memory: the latest version of each mirrored document, keyed by (user_id, id)."""
+
+    def __init__(self) -> None:
+        self.documents: dict[tuple[uuid.UUID, uuid.UUID], MirroredNotification] = {}
+        self.writes = 0
+        self.down = False
+
+    def reset(self) -> None:
+        self.documents.clear()
+        self.writes = 0
+        self.down = False
+
+    async def write(self, item: MirroredNotification) -> None:
+        if self.down:
+            raise MirrorError("firestore down")
+        self.writes += 1
+        self.documents[(item.user_id, item.id)] = item

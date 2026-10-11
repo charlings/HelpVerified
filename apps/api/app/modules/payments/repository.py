@@ -81,6 +81,19 @@ class PaymentRepository:
             or 0
         )
 
+    async def refunds_unsent(self, max_attempts: int) -> list[uuid.UUID]:
+        """Refunded payments Paystack hasn't accepted the refund for, oldest first."""
+        rows = await self.session.scalars(
+            select(Payment.id)
+            .where(
+                Payment.status == PaymentStatus.refunded,
+                Payment.refund_sent_at.is_(None),
+                Payment.refund_attempts < max_attempts,
+            )
+            .order_by(Payment.refunded_at)
+        )
+        return list(rows)
+
 
 class WebhookEventRepository:
     def __init__(self, session: AsyncSession) -> None:

@@ -6,7 +6,7 @@ Families in Nigeria hire nannies, drivers and cleaners whose **ID, guarantor, re
 - Working rules for contributors and Claude Code: `CLAUDE.md` and `.claude/skills/helpverified/`
 - Architecture and decisions: `docs/`
 
-**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold), B2 (auth), B3 (agencies, workers, verification) B4 (requests, proposals, placements) and B5 (Paystack payments, test mode) are done; the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
+**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold), B2 (auth), B3 (agencies, workers, verification) B4 (requests, proposals, placements) and B5 (Paystack payments, test mode) are done, and B6 (notifications, email and scheduled jobs) is code complete, pending the owner's email and Firebase accounts for its live checks; the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
 
 ## Requirements
 
@@ -48,7 +48,9 @@ The design-token and component gallery is at http://localhost:3000/styleguide (d
    uv run fastapi dev app/main.py     # http://localhost:8000/health and /docs
    ```
 
-**Emails in development** (verify email, reset password) aren't sent. They're written as JSON files to `apps/api/.outbox/`; open the newest one and follow its `link`. A real provider arrives in B6.
+**Emails in development** aren't sent. They're written as JSON files to `apps/api/.outbox/`; open the newest one and follow its `link`. To send real email, set `EMAIL_PROVIDER=smtp` and the `SMTP_*` keys (any provider's SMTP relay), then check with `uv run python -m scripts.email_live_check you@example.com`.
+
+**Notifications and jobs (B6).** Events (a proposal, a paid fee, a lapsed hold, an expiring check, …) are written to the `notifications` table with the change itself, served at `/api/v1/notifications`, emailed, and mirrored to Firestore when `NOTIFICATIONS_MIRROR=firestore` (check with `uv run python -m scripts.firestore_live_check`). Scheduled jobs run inside the API (`JOBS_ENABLED=true`): `uv run python -m app.jobs list` shows them, and `uv run python -m app.jobs run <name>` runs one now. See ADR 0015.
 
 ## Commands
 
@@ -115,7 +117,8 @@ First Playwright run: `pnpm --filter web exec playwright install chromium webkit
 | `docs/bundles.md` | JS per page and the budgets CI enforces |
 | `docs/design-tokens.md`, `docs/asset-inventory.md`, `docs/content.md`, `docs/placeholders.md`, `docs/reference-adaptation.md` | Design system, assets, copy, temporary items, reference sites |
 | `docs/database.md` | What's in the database now: migrations, ERD, rules enforced in SQL |
-| `docs/decisions/` | Architecture decision records (ADRs 0001–0014) |
+| `docs/decisions/` | Architecture decision records (ADRs 0001–0015) |
+| `docs/owner-inputs.md` | Keys, accounts, prices and decisions the build is waiting on |
 | `docs/CHANGELOG.md` | A report per milestone |
 
 ## Brand originals
