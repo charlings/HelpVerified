@@ -24,12 +24,15 @@ class UserRepository:
     async def get_by_email_for_update(self, email: str) -> User | None:
         return await self.session.scalar(select(User).where(User.email == email.strip()).with_for_update())
 
+    async def get_by_google_sub_for_update(self, google_sub: str) -> User | None:
+        return await self.session.scalar(select(User).where(User.google_sub == google_sub).with_for_update())
+
     async def add(self, user: User) -> User:
         self.session.add(user)
         try:
             await self.session.flush()
         except IntegrityError as exc:
-            if "uq_users_email" in str(exc.orig):
+            if "uq_users_email" in str(exc.orig) or "uq_users_google_sub" in str(exc.orig):
                 raise EmailTaken() from exc
             raise
         await self.session.refresh(user)

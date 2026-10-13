@@ -21,6 +21,7 @@ const pages: [path: string, title: string][] = [
   [routes.auth.login, "Sign in · HelpVerified"],
   [routes.auth.signup, "Create an account · HelpVerified"],
   [routes.auth.agencySignup, "Register your agency · HelpVerified"],
+  [routes.auth.googleSignup, "Finish signing up · HelpVerified"],
   [routes.auth.forgot, "Forgot password · HelpVerified"],
   [routes.auth.reset, "Reset password · HelpVerified"],
   [routes.auth.verifyEmail, "Verify your email · HelpVerified"],

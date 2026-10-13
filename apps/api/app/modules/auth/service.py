@@ -11,6 +11,7 @@ new link.
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import StrEnum
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +27,7 @@ from app.core.security import (
     verify_password,
 )
 from app.integrations.email import EmailMessage, EmailSender
+from app.integrations.google import GoogleIdentity
 from app.modules.auth import emails
 from app.modules.auth.models import TokenPurpose
 from app.modules.auth.repository import TokenRepository
@@ -46,6 +48,13 @@ class SignedIn:
 class Refreshed:
     access_token: str
     refresh_token: str
+
+
+class GoogleOutcome(StrEnum):
+    """Why a Google sign-in didn't sign anyone in (the router turns these into redirects)."""
+
+    new_user = "new_user"  # no account yet: they choose family or agency first
+    other_google_account = "other_google_account"  # the email's account is linked to a different Google login
 
 
 class AuthService:
@@ -153,6 +162,66 @@ class AuthService:
                 raise AccountSuspended()
             user.last_login_at = now
             refresh = await self._issue_refresh(user.id, uuid.uuid4(), now)
+        return SignedIn(user=user, access_token=self._access_token(user, now), refresh_token=refresh)
+
+    async def google_sign_in(self, identity: GoogleIdentity) -> SignedIn | GoogleOutcome:
+        """Signs in the account linked to this Google login, else links the account with the same email.
+
+        Callers pass only identities whose email Google has verified. Linking an account whose email was
+        never verified also verifies it, removes its password and ends its sessions: whoever registered
+        it without proving the address (perhaps not the address's owner) loses access. A verified
+        account keeps its password. Suspended accounts are refused (403 ACCOUNT_SUSPENDED).
+        """
+        now = utcnow()
+        async with self.session.begin():
+            user = await self.users.get_by_google_sub_for_update(identity.sub)
+            if user is None:
+                user = await self.users.get_by_email_for_update(identity.email)
+                if user is None:
+                    return GoogleOutcome.new_user
+                if user.google_sub is not None:
+                    return GoogleOutcome.other_google_account
+                if user.status is AccountStatus.suspended:
+                    raise AccountSuspended()
+                took_over = user.email_verified_at is None
+                user.google_sub = identity.sub
+                if took_over:
+                    user.email_verified_at = now
+                    user.password_hash = None
+                    await self.tokens.revoke_all_for_user(user.id, now)
+                    await self.tokens.use_all_one_time(user.id, TokenPurpose.verify_email, now)
+                    await self.tokens.use_all_one_time(user.id, TokenPurpose.reset_password, now)
+                log.info("user.google_linked", user_id=str(user.id), password_removed=took_over)
+            if user.status is AccountStatus.suspended:
+                raise AccountSuspended()
+            user.last_login_at = now
+            refresh = await self._issue_refresh(user.id, uuid.uuid4(), now)
+        return SignedIn(user=user, access_token=self._access_token(user, now), refresh_token=refresh)
+
+    async def google_sign_up(
+        self, identity: GoogleIdentity, *, full_name: str, role: UserRole, privacy_notice_version: str
+    ) -> SignedIn:
+        """Creates the account for a new Google user (email verified by Google, no password) and signs
+        them in. 409 EMAIL_TAKEN if an account with the email or Google login appeared meanwhile."""
+        now = utcnow()
+        async with self.session.begin():
+            if await self.users.get_by_email(identity.email):
+                raise EmailTaken()
+            user = await self.users.add(
+                User(
+                    email=identity.email.strip(),
+                    password_hash=None,
+                    google_sub=identity.sub,
+                    full_name=full_name,
+                    role=role,
+                    email_verified_at=now,
+                    last_login_at=now,
+                    privacy_notice_version=privacy_notice_version,
+                    privacy_accepted_at=now,
+                )
+            )
+            refresh = await self._issue_refresh(user.id, uuid.uuid4(), now)
+        log.info("user.signed_up", user_id=str(user.id), role=user.role.value, via="google")
         return SignedIn(user=user, access_token=self._access_token(user, now), refresh_token=refresh)
 
     async def refresh(self, refresh_token: str | None) -> Refreshed:

@@ -2,7 +2,7 @@
 
 Everything the build is waiting on from the owner: accounts, keys, prices and decisions. It's updated at the end of every milestone and reported with the milestone summary. Keys and secrets go into `apps/api/.env` (never into chat or git).
 
-Last updated: 2026-10-13. B6 is code complete and committed, pending only #3's end-to-end test (#5 and #8a decided 2026-10-13). Firestore passed (#4 done). Brevo SMTP connectivity passed. The end-to-end email test is deferred to B7 (owner, 2026-10-13), so B6's email criterion stays "partly met" until then.
+Last updated: 2026-10-13. B6 is code complete and committed, pending only #3's end-to-end test (#5 and #8a decided 2026-10-13). Firestore passed (#4 done). Brevo SMTP connectivity passed. The end-to-end email test is deferred to B7 (owner, 2026-10-13), so B6's email criterion stays "partly met" until then. Google sign-in is code complete (ADR 0016), pending #6's live checks.
 
 ## Needed now (built without them; they unlock features)
 
@@ -23,7 +23,7 @@ B6 works without these: emails go to `apps/api/.outbox/`, the feed is served fro
 
 | # | What | Why | How |
 | --- | --- | --- | --- |
-| 6 | **Google OAuth client** (if you want Google sign-in) | Deferred from B2 (ADR 0011) | Google Cloud console → APIs & Services → Credentials → OAuth client ID (web). I'll give the redirect URL. Or decide to drop Google for v1 |
+| 6 | **Google sign-in: the live checks.** *Code complete (ADR 0016). The OAuth client is in `apps/api/.env`. (a) The credentials check passed on 2026-10-13. Still to do: (b) one real sign-in in the browser, which needs the web app connected to the API (B7)* | Confirms the client ID, secret and redirect URI work with Google | (a) `cd apps/api; uv run python -m scripts.google_live_check`, which should print "Client ID and secret: OK". In the console the client's authorised redirect URI must be exactly `http://localhost:8000/api/v1/auth/google/callback`, and your Gmail must be a test user on the consent screen. (b) At B7: sign in with Google with mocks off |
 | 7 | **CI result on GitHub** | CI has never been confirmed green; the Lighthouse score from Phase 1 is still unproven | GitHub → Actions → the latest `feature/backend` run: is it green? If not, paste the failing step |
 
 ## Needed for B8 (deploy)
@@ -33,6 +33,7 @@ B6 works without these: emails go to `apps/api/.outbox/`, the feed is served fro
 | 8 | **Render account** (API, PostgreSQL, Redis) and **Vercel account** (web) | Hosting (ADR 0001) | Create both. I'll walk through each setting |
 | 8a | **Render Cron Jobs for the scheduled jobs** (decided 2026-10-13) | Set up at deploy: one cron job per job, schedules in ADR 0015 (in UTC), and `JOBS_ENABLED=false` on the API web service | At B8: check Render's current cron pricing and minimum interval (two jobs run every minute) and confirm the cost with me before creating them |
 | 9 | **Domain names** | The refresh cookie needs the web app and API on the same site (ADR 0011), for example `helpverified.ng` and `api.helpverified.ng` | Buy or choose a domain; DNS records come at deploy time |
+| 9a | **Google sign-in for production** | Google only redirects to registered URIs, and only test users can sign in while the consent screen is in testing | At deploy: add `https://<api-domain>/api/v1/auth/google/callback` to the OAuth client, set the same client's keys in Render, and publish the consent screen (ADR 0016) |
 | 10 | **Paystack webhook URL** | Paystack can only call a public address | Once deployed: Paystack dashboard → Settings → API Keys & Webhooks → set `https://<api-domain>/api/v1/webhooks/paystack` |
 | 11 | **Paystack test vs live for the demo** | Open decision (CLAUDE.md) | Decide. Live needs a verified Paystack business and live keys set only in production |
 | 12 | **Demo accounts' email addresses** | Paystack rejects reserved domains such as `.test`; the demo seed needs addresses it accepts | Decide whether demo accounts use your own domain or ordinary addresses |
@@ -52,7 +53,7 @@ B6 works without these: emails go to `apps/api/.outbox/`, the feed is served fro
 | --- | --- | --- |
 | When the placement fee is charged | At accept, with the 30-minute hold | 2026-10-07 (ADR 0013) |
 | Local Redis | Portable Redis 7.4 build | 2026-10-07 (ADR 0011) |
-| Google sign-in | Deferred to its own stage before B7 | 2026-10-07 (ADR 0011) |
+| Google sign-in | Deferred to its own stage before B7 (2026-10-07, ADR 0011); built on 2026-10-13. Linking a never-verified account removes its password; new Google users choose a role on `/signup/google` | 2026-10-13 (ADR 0016) |
 | Evidence of rejected checks | Deleted after 90 days (`RETENTION_REJECTED_EVIDENCE_DAYS=90`) | 2026-10-11 (ADR 0015) |
 | Trial reminders | Sent 2 days before a trial ends (`TRIAL_REMINDER_DAYS=2`) | 2026-10-11 (ADR 0015) |
 | Firebase (#4) | Project `helpverified`; key kept outside the repo; live check passed | 2026-10-12 |

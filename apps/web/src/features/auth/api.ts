@@ -1,7 +1,8 @@
 import { api } from "@/lib/api-client";
-import { PRIVACY_NOTICE_VERSION, type AgencyPayload, type SignupInput } from "./schemas";
+import { PRIVACY_NOTICE_VERSION, type AgencyPayload, type GoogleSignupInput, type SignupInput } from "./schemas";
 import type {
   AgencySummary,
+  GooglePendingResponse,
   LoginResponse,
   RefreshResponse,
   SessionUser,
@@ -37,6 +38,15 @@ export const authApi = {
   forgotPassword: (email: string) => api.post<void>("/auth/forgot-password", { email }, { skipAuthRetry: true }),
   resetPassword: (token: string, password: string) =>
     api.post<void>("/auth/reset-password", { token, password }, { skipAuthRetry: true }),
+
+  /** A new Google user's details (from the API's httpOnly pending cookie); 410 TOKEN_EXPIRED if gone. */
+  googlePending: () => api.get<GooglePendingResponse>("/auth/google/pending", { skipAuthRetry: true }),
+  googleComplete: (input: GoogleSignupInput) =>
+    api.post<LoginResponse>(
+      "/auth/google/complete",
+      { full_name: input.full_name, role: input.role, privacy_notice_version: PRIVACY_NOTICE_VERSION },
+      { skipAuthRetry: true },
+    ),
 
   createAgency: (payload: AgencyPayload) => api.post<AgencySummary>("/agencies", payload),
 

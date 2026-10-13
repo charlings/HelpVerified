@@ -47,13 +47,22 @@ TEST_ENV = {
     # .env file, so these pin every test app to the outbox and no mirror (tests/unit/test_isolation.py).
     "EMAIL_PROVIDER": "outbox",
     "NOTIFICATIONS_MIRROR": "none",
+    # Not a real OAuth client: test apps sign in through tests.fakes.FakeGoogle.
+    "GOOGLE_CLIENT_ID": "test-client.apps.googleusercontent.com",
+    "GOOGLE_CLIENT_SECRET": "test-google-secret",
 }
 os.environ.update(TEST_ENV)
 
 from app.core.config import Settings, get_settings, load_settings  # noqa: E402
 from app.db.session import create_sessionmaker  # noqa: E402
 from app.main import create_app  # noqa: E402
-from tests.fakes import FakeCloudinary, FakeMirror, FakePaystack, MemoryEmailSender  # noqa: E402
+from tests.fakes import (  # noqa: E402
+    FakeCloudinary,
+    FakeGoogle,
+    FakeMirror,
+    FakePaystack,
+    MemoryEmailSender,
+)
 
 ALEMBIC_INI = Path(__file__).parents[1] / "alembic.ini"
 TABLES = (
@@ -229,12 +238,24 @@ def mirror(_session_mirror: FakeMirror) -> FakeMirror:
 
 
 @pytest.fixture(scope="session")
+def _session_google() -> FakeGoogle:
+    return FakeGoogle()
+
+
+@pytest.fixture
+def google(_session_google: FakeGoogle) -> FakeGoogle:
+    _session_google.reset()
+    return _session_google
+
+
+@pytest.fixture(scope="session")
 def shared_api(
     db_ready: None,
     _session_outbox: MemoryEmailSender,
     _session_cloudinary: FakeCloudinary,
     _session_paystack: FakePaystack,
     _session_mirror: FakeMirror,
+    _session_google: FakeGoogle,
 ) -> Iterator[TestClient]:
     """One running app for the whole session. Closing pooled PostgreSQL connections costs seconds
     on Windows, so tests share this app's pool; `api` resets its state between tests."""
@@ -245,6 +266,7 @@ def shared_api(
         cloudinary=_session_cloudinary,
         paystack=_session_paystack,
         mirror=_session_mirror,
+        google=_session_google,
         deliver_immediately=False,  # tests deliver with `deliver(api)`, so nothing runs between tests
     )
     with TestClient(app, raise_server_exceptions=False) as test_client:
@@ -274,6 +296,7 @@ def make_api(
     cloudinary: FakeCloudinary,
     paystack: FakePaystack,
     mirror: FakeMirror,
+    google: FakeGoogle,
 ) -> Iterator[ApiFactory]:
     """Builds a separate running app with settings overrides (slower: it opens its own connections)."""
     clients: list[TestClient] = []
@@ -287,6 +310,7 @@ def make_api(
             cloudinary=cloudinary,
             paystack=paystack,
             mirror=mirror,
+            google=google,
             deliver_immediately=False,
         )
         test_client = TestClient(app, raise_server_exceptions=False)
@@ -307,6 +331,7 @@ def api(
     cloudinary: FakeCloudinary,
     paystack: FakePaystack,
     mirror: FakeMirror,
+    google: FakeGoogle,
 ) -> TestClient:
     """The running app with default test settings, empty data, no cookies and fresh fakes."""
     shared_api.cookies.clear()

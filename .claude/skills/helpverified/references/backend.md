@@ -71,7 +71,7 @@ Startup fails fast if a required key is missing in non-test environments.
 - Passwords: argon2id. Minimum 8 characters, checked against a short common-password list.
 - Access token: JWT (HS256), 15 min, claims `sub`, `role`, `agency_id?`, `family_id?`, `exp`, `jti`. Sent as `Authorization: Bearer`.
 - Refresh token: random 256-bit, stored hashed, in an `httpOnly; Secure; SameSite=Lax` cookie scoped to `/api/v1/auth`. Rotated on every refresh; reuse of a revoked token revokes the whole family and forces login.
-- Google: authorisation-code flow on the backend; match by `google_sub`, else by verified email; new Google users must still choose family or agency.
+- Google: authorisation-code flow on the backend; match by `google_sub`, else by verified email; new Google users must still choose family or agency. Built per ADR 0016: PKCE + state (bound by an httpOnly cookie) + nonce in Redis; the ID token is checked against Google's keys; linking an unverified account removes its password and sessions; the session reaches the web app via the refresh cookie (`/login?google=signed_in`). Client in `app/integrations/google.py`, flow state in `app/modules/auth/google.py`.
 - Email verification required before a family can post a request or an agency can submit onboarding.
 - Dependencies:
 

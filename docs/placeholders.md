@@ -17,7 +17,7 @@ Everything here must be resolved before production.
 | Privacy policy, Terms of use | `/privacy`, `/terms` | Section outlines with a visible "Draft — under legal review" notice | Text drafted and reviewed by a lawyer | M3 |
 | Contact details | `/contact` | "Contact details will be published before launch." | Email, phone, address | M3 |
 | Testimonials | Home | Section hidden (no entries) | Real, attributable testimonials, if wanted | M3 |
-| Google sign-in | Login, signup | Button shown; in demo mode it explains Google sign-in isn't live | Real OAuth (backend B2) | M4 |
+| Google sign-in | Login, signup | Button shown; in demo mode it explains Google sign-in isn't live. With mocks off it starts the real flow (ADR 0016) | Nothing: built; checked live at B7 | M4 |
 | Transactional email | Signup, forgot password, resend | Not sent; demo mode shows a "Demo: open the link we would have emailed" link | Email provider (backend B6) | M4 |
 | Privacy notice version | Signup | `draft-2026-10-05` recorded with each signup | A final, versioned privacy policy | M4 |
 | Document storage | Agency verification uploads | Demo mode keeps files in browser memory only (viewable until reload) | Cloudinary account and keys (backend B3) | M5 |

@@ -47,6 +47,11 @@ function seed() {
     oneTimeTokens: [] as OneTimeToken[],
     outbox: [] as OutboxMessage[],
     loginAttempts: {} as Record<string, number[]>,
+    /**
+     * A new Google user waiting to choose family or agency (the real API keeps this in Redis behind an
+     * httpOnly cookie). Demo mode never starts Google sign-in, so only tests set it.
+     */
+    googlePending: null as { email: string; full_name: string | null } | null,
     contactMessages: [] as ContactMessage[],
     uploads: {} as Record<string, MockUpload>,
     accessLog: [] as MockAccessLog[],
@@ -68,7 +73,7 @@ function seed() {
 
 type Data = ReturnType<typeof seed>;
 
-const STORAGE_KEY = "hv-mock-db-v4"; // bump when the seed shape changes
+const STORAGE_KEY = "hv-mock-db-v5"; // bump when the seed shape changes
 
 function load(): Data {
   if (typeof sessionStorage !== "undefined") {

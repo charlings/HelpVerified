@@ -1,5 +1,60 @@
 # Changelog
 
+## Google sign-in stage (2026-10-13)
+
+**Status: signed off by the owner 2026-10-13; committed to `feature/backend`.** The credentials live check passed on 2026-10-13 (`scripts.google_live_check`: Google accepted the client, keys OK). The browser sign-in (owner input #6b) is checked at B7.
+
+### 1. Objective
+"Continue with Google" on the login and signup pages. Existing accounts are signed in, or linked by verified email. New users choose family or agency first. The session uses the same refresh cookie as a password login, and no token ever appears in a URL.
+
+### 2. Files created
+- `apps/api/app/integrations/google.py`: consent URL (PKCE S256), code exchange, ID-token checks (Google's keys cached, refetched once for an unknown key ID; audience, issuer, expiry, nonce)
+- `apps/api/app/modules/auth/google.py`: Redis flow state (one-time `state`, verifier, nonce, `next`) and pending sign-ups, keyed by hashes; `clean_next`
+- `apps/api/scripts/google_live_check.py`: checks the client ID and secret against Google without a browser
+- `apps/api/tests/integration/test_auth_google.py` (20), `apps/api/tests/unit/test_google.py` (22); `FakeGoogle` in `tests/fakes.py`
+- `apps/web/src/features/auth/screens/GoogleSignupScreen.tsx`, `apps/web/src/app/(auth)/signup/google/page.tsx`, `google-signin.test.tsx` (12)
+- `docs/decisions/0016-google-sign-in.md`
+
+### 3. Files modified
+- `app/core/config.py`: `GOOGLE_CLIENT_ID`/`SECRET` (both or neither), flow and pending TTLs, `google_enabled`, `google_redirect_uri`
+- `app/modules/auth/service.py`: `google_sign_in` (match by sub, then email; unverified account → password and sessions removed; suspended refused) and `google_sign_up`
+- `app/modules/auth/router.py`: `GET /auth/google/start`, `/callback`, `/pending`; `POST /auth/google/complete`
+- `app/modules/auth/schemas.py`: `GooglePendingOut`, `GoogleCompleteIn`
+- `app/modules/users/repository.py`: lookup by `google_sub`; a duplicate `google_sub` is 409 `EMAIL_TAKEN`, not a 500
+- `app/core/deps.py`, `app/main.py`: the Google client and flow store on `app.state`; `create_app(google=…)` for tests
+- `tests/conftest.py`: a fake Google client pinned in `TEST_ENV` (the owner's real one is never used); `google` fixture
+- `.env.example`: Google keys, with the exact redirect URI to register
+- Web: `config/routes.ts` (`auth.googleSignup`); `content/auth.ts` (error messages, sign-up page copy); `GoogleButton.tsx` (passes a safe `next`); `LoginScreen.tsx` (shows `google_error`, restores the session after `google=signed_in`); `api.ts`, `types.ts`, `schemas.ts`, `index.ts`; mock `pending`/`complete` handlers with the same rules; `mocks/db.ts` (`googlePending`, storage key v5)
+- e2e: the new page added to the routes, audit and auth-accessibility lists, plus login with `?google_error=`
+- Docs: `owner-inputs.md` (#6 now the live checks; new #9a for production), `placeholders.md`, `README.md`, `CLAUDE.md`; skill references `api-contracts.md` and `backend.md`
+
+### 4. Key decisions
+ADR 0016. Owner, in the plan: linking a never-verified account removes its password and sessions; the web pieces are built now. The rest: errors are redirects with display codes, not new API codes; the session is handed over through the refresh cookie; contract additions are `pending` and `complete`; no migration.
+
+### 5. Tests and checks
+- API: `ruff check` and `ruff format` clean; `mypy app` strict, 117 files, no issues; `pytest -q` **478 passed** (436 plus 42 new). One run failed first, because `.env.example` lacked the new keys (`test_every_setting_is_documented_in_env_example`); fixed.
+- Web: `lint` and `typecheck` clean; `vitest` **496 passed** (47 files); `build` succeeds (`/signup/google` included). The first full vitest run reported a failure while the API suite was running alongside it. The output didn't show which test, and the re-run passed with no changes.
+- e2e (`auth.spec.ts`, `routes.spec.ts`, chromium): 74 passed, 1 failed on the first run (`agency@demo.hv lands on their workspace` timed out while still "Signing in…", likely the dev server compiling `/agency`), then 3/3 passed on re-run. `audit.spec.ts` wasn't run this stage.
+
+### 6. Known issues
+- The real browser round trip with Google hasn't run. It needs the web app with mocks off and the API running (B7). In demo mode the button still only shows its notice.
+- No email to the owner when Google is linked to an existing account, and no way to unlink Google. Both are left for later (ADR 0016).
+
+### 7. Assumptions
+- The OAuth client's authorised redirect URI is exactly `http://localhost:8000/api/v1/auth/google/callback`, and the owner's Gmail is a test user on the consent screen.
+- A new agency admin from Google goes straight to agency onboarding; a family goes to a safe `next`, or else `/family`.
+
+### 8. Acceptance criteria (backend.md §4 Google line)
+| Item | Status |
+| --- | --- |
+| Authorisation-code flow on the backend | Met (PKCE, state bound to the browser, nonce; tested) |
+| Match by `google_sub`, else verified email | Met (plus the unverified-account takeover guard, other-Google-account and suspended refusals) |
+| New Google users choose family or agency | Met (`/signup/google`, tested on API and web) |
+| Works with the owner's real Google client | **Partly met**: credentials check passed 2026-10-13; browser sign-in at B7 (owner input #6b) |
+
+### 9. Recommended next step
+The owner runs `cd apps/api; uv run python -m scripts.google_live_check` and signs off. Then commit to `feature/backend` and start B7, where the browser Google sign-in and the end-to-end email are checked.
+
 ## B6 — Notifications + jobs (2026-10-08)
 
 **Status: code complete — pending owner input #3's end-to-end test** (#4 done: the Firestore live check passed 2026-10-12; #5 and #8a decided 2026-10-13: idle-worker evidence after 12 months, and jobs on Render Cron Jobs in production). For #3, the owner's Brevo SMTP connectivity check passed on 2026-10-13. A real app email end to end (a reset) is deferred to B7 by the owner.

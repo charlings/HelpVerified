@@ -180,7 +180,9 @@ test.describe("auth screens are accessible", () => {
   for (const path of [
     routes.auth.login,
     `${routes.auth.login}?expired=1`,
+    `${routes.auth.login}?google_error=cancelled`,
     routes.auth.signup,
+    routes.auth.googleSignup,
     routes.auth.forgot,
     routes.auth.reset,
     `${routes.auth.reset}?token=abc`,

@@ -22,6 +22,10 @@ export const signupSchema = z.object({
 });
 export type SignupInput = z.infer<typeof signupSchema>;
 
+/** A new Google user: Google supplies the (verified) email; there's no password. */
+export const googleSignupSchema = signupSchema.pick({ role: true, full_name: true, accept_privacy: true });
+export type GoogleSignupInput = z.infer<typeof googleSignupSchema>;
+
 export const forgotPasswordSchema = z.object({ email });
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 

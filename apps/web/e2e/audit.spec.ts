@@ -35,6 +35,7 @@ const visits: Visit[] = [
   { path: routes.auth.login },
   { path: routes.auth.signup },
   { path: routes.auth.agencySignup, as: "agency_admin", token: "demo-refresh-newagency" },
+  { path: routes.auth.googleSignup },
   { path: routes.auth.forgot },
   { path: routes.auth.reset },
   { path: routes.auth.verifyEmail },

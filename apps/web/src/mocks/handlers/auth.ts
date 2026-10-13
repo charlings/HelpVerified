@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { env } from "@/config/env";
 import { routes } from "@/config/routes";
-import { forgotPasswordSchema, loginSchema, signupSchema } from "@/features/auth";
+import { forgotPasswordSchema, googleSignupSchema, loginSchema, signupSchema } from "@/features/auth";
 import type { FieldErrors } from "@/lib/api-client";
 import { MOCK_REFRESH_COOKIE, readCookie, writeCookie } from "../cookies";
 import { db, persist, type MockUser, type OneTimeToken } from "../db";
@@ -226,6 +226,48 @@ export const authHandlers = [
     for (const t of Object.values(db.refreshTokens)) if (t.user_id === user.id) t.revoked = true;
     persist();
     return new HttpResponse(null, { status: 204 });
+  }),
+
+  // Google sign-in (ADR 0016). Same rules and errors as the API: the pending sign-up completes once.
+  http.get(`${base}/auth/google/pending`, async ({ request }) => {
+    await mockLatency();
+    const forced = forcedError(request);
+    if (forced) return forced;
+    return db.googlePending
+      ? HttpResponse.json(db.googlePending)
+      : errorResponse("TOKEN_EXPIRED", "Google sign-in expired.");
+  }),
+
+  http.post(`${base}/auth/google/complete`, async ({ request }) => {
+    await mockLatency();
+    const forced = forcedError(request);
+    if (forced) return forced;
+    const raw = (await body(request)) as Record<string, unknown> | null;
+    const parsed = googleSignupSchema.safeParse({ ...raw, accept_privacy: Boolean(raw?.privacy_notice_version) });
+    if (!parsed.success) return errorResponse("VALIDATION_ERROR", "Invalid sign-up.", fieldErrors(parsed.error.issues));
+    const pending = db.googlePending;
+    if (!pending) return errorResponse("TOKEN_EXPIRED", "Google sign-in expired.");
+    db.googlePending = null;
+    if (findByEmail(pending.email)) {
+      persist();
+      return errorResponse("EMAIL_TAKEN", "Email already registered.");
+    }
+
+    const created: MockUser = {
+      id: `u-${crypto.randomUUID()}`,
+      email: pending.email,
+      password: "", // Google-only: no password, and an empty one never matches at login
+      full_name: parsed.data.full_name,
+      role: parsed.data.role,
+      status: "active",
+      email_verified_at: new Date().toISOString(), // Google verified it
+      privacy_notice_version: String(raw?.privacy_notice_version),
+    };
+    db.users.push(created);
+    issueRefreshToken(created.id);
+    const access_token = issueAccessToken(created.id);
+    persist();
+    return HttpResponse.json({ access_token, user: userOut(created) }, { status: 201 });
   }),
 
   // Demo mode only: lets the "check your email" screens open the link that would have been emailed.

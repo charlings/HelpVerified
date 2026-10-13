@@ -22,11 +22,13 @@ from app.db.session import create_engine, create_sessionmaker
 from app.integrations.cloudinary import Cloudinary, CloudinaryClient
 from app.integrations.email import EmailSender, email_sender_from
 from app.integrations.firestore import NotificationMirror, mirror_from
+from app.integrations.google import GoogleOAuth, google_from
 from app.integrations.paystack import PaystackApi, PaystackClient
 from app.jobs.registry import JobContext
 from app.jobs.scheduler import JobRunner, start_scheduler
 from app.modules.admin.router import router as admin_router
 from app.modules.agencies.router import router as agencies_router
+from app.modules.auth.google import GoogleFlows
 from app.modules.auth.router import router as auth_router
 from app.modules.families.router import router as families_router
 from app.modules.notifications.dispatcher import NotificationDispatcher
@@ -51,11 +53,13 @@ def create_app(
     cloudinary: Cloudinary | None = None,
     paystack: PaystackApi | None = None,
     mirror: NotificationMirror | None = None,
+    google: GoogleOAuth | None = None,
     *,
     deliver_immediately: bool = True,
 ) -> FastAPI:
     """Integrations default to the real clients settings describe; tests pass fakes. With
-    `deliver_immediately=False` notifications wait for an explicit `app.state.notifications.drain()`."""
+    `deliver_immediately=False` notifications wait for an explicit `app.state.notifications.drain()`.
+    Google sign-in is off (even with a fake passed) unless the Google settings are set."""
     settings = settings or get_settings()
     configure_logging(settings.LOG_LEVEL)
 
@@ -66,6 +70,12 @@ def create_app(
         app.state.sessionmaker = create_sessionmaker(engine)
         app.state.rate_limiter = RateLimiter(redis)
         app.state.idempotency = IdempotencyStore(redis, timedelta(hours=settings.IDEMPOTENCY_TTL_HOURS))
+        app.state.google = (google or google_from(settings)) if settings.google_enabled else None
+        app.state.google_flows = GoogleFlows(
+            redis,
+            timedelta(minutes=settings.GOOGLE_FLOW_TTL_MIN),
+            timedelta(minutes=settings.GOOGLE_PENDING_TTL_MIN),
+        )
         app.state.paystack = paystack or PaystackClient(settings.PAYSTACK_SECRET_KEY.get_secret_value())
         app.state.email_sender = email_sender or email_sender_from(settings)
         app.state.cloudinary = cloudinary or CloudinaryClient(

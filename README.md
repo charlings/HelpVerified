@@ -6,7 +6,7 @@ Families in Nigeria hire nannies, drivers and cleaners whose **ID, guarantor, re
 - Working rules for contributors and Claude Code: `CLAUDE.md` and `.claude/skills/helpverified/`
 - Architecture and decisions: `docs/`
 
-**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold), B2 (auth), B3 (agencies, workers, verification) B4 (requests, proposals, placements) and B5 (Paystack payments, test mode) are done, and B6 (notifications, email and scheduled jobs) is code complete, pending the owner's email provider for its last live check (Firestore passed); the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
+**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold), B2 (auth), B3 (agencies, workers, verification) B4 (requests, proposals, placements) and B5 (Paystack payments, test mode) are done, and B6 (notifications, email and scheduled jobs) is code complete, with its end-to-end email check deferred to B7 (Firestore and SMTP connectivity passed). Google sign-in is code complete (ADR 0016), pending its live checks. The web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
 
 ## Requirements
 
@@ -49,6 +49,8 @@ The design-token and component gallery is at http://localhost:3000/styleguide (d
    ```
 
 **Emails in development** aren't sent. They're written as JSON files to `apps/api/.outbox/`; open the newest one and follow its `link`. To send real email, set `EMAIL_PROVIDER=smtp` and the `SMTP_*` keys (any provider's SMTP relay), then check with `uv run python -m scripts.email_live_check you@example.com`.
+
+**Google sign-in** is off until `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set (a Google Cloud OAuth client of type *Web application*, with authorised redirect URI `http://localhost:8000/api/v1/auth/google/callback`). Check the keys with `uv run python -m scripts.google_live_check`. The button only starts the real flow when the web app runs with mocks off. See ADR 0016.
 
 **Notifications and jobs (B6).** Events (a proposal, a paid fee, a lapsed hold, an expiring check, …) are written to the `notifications` table with the change itself, served at `/api/v1/notifications`, emailed, and mirrored to Firestore when `NOTIFICATIONS_MIRROR=firestore` (check with `uv run python -m scripts.firestore_live_check`). Scheduled jobs run inside the API (`JOBS_ENABLED=true`): `uv run python -m app.jobs list` shows them, and `uv run python -m app.jobs run <name>` runs one now. See ADR 0015.
 

@@ -21,10 +21,12 @@ from app.core.rate_limit import RateLimiter
 from app.core.security import decode_access_token
 from app.integrations.cloudinary import Cloudinary
 from app.integrations.email import EmailSender
+from app.integrations.google import GoogleOAuth
 from app.integrations.paystack import PaystackApi
 from app.modules.admin.service import AdminService
 from app.modules.agencies.models import Agency
 from app.modules.agencies.service import AgencyService
+from app.modules.auth.google import GoogleFlows
 from app.modules.auth.service import AuthService
 from app.modules.families.service import FamilyService
 from app.modules.notifications.repository import PENDING as NOTIFICATIONS_PENDING
@@ -62,9 +64,22 @@ def get_email_sender(request: Request) -> EmailSender:
     return sender
 
 
+def get_google(request: Request) -> GoogleOAuth | None:
+    """None when Google sign-in is off (no GOOGLE_CLIENT_ID/SECRET)."""
+    google: GoogleOAuth | None = request.app.state.google
+    return google
+
+
+def get_google_flows(request: Request) -> GoogleFlows:
+    flows: GoogleFlows = request.app.state.google_flows
+    return flows
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
 LimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
+GoogleDep = Annotated[GoogleOAuth | None, Depends(get_google)]
+GoogleFlowsDep = Annotated[GoogleFlows, Depends(get_google_flows)]
 
 
 def get_auth_service(

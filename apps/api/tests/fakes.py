@@ -1,9 +1,11 @@
 """Test doubles for integrations."""
 
+import base64
+import hashlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 
@@ -11,10 +13,12 @@ from app.core.errors import PaymentProviderError
 from app.integrations.cloudinary import Asset, SignedUpload, sign
 from app.integrations.email import EmailMessage
 from app.integrations.firestore import MirroredNotification, MirrorError
+from app.integrations.google import GoogleAuthError, GoogleIdentity
 from app.integrations.payments import Checkout
 from app.integrations.paystack import Initialized, RemoteSubscription, Verified
 
 FAKE_DOWNLOAD_HOST = "https://fake-cloudinary.test"
+FAKE_GOOGLE_AUTHORIZE = "https://accounts.google.test/auth"
 
 
 class FakeCloudinary:
@@ -181,6 +185,51 @@ class FakePayments:
 class FailingEmailSender:
     async def send(self, message: EmailMessage) -> None:
         raise ConnectionError("email provider down")
+
+
+class FakeGoogle:
+    """Google's consent screen and token endpoint in memory. Like Google, it checks the PKCE verifier
+    against the challenge and the redirect URI, spends each code once, and echoes the nonce."""
+
+    def __init__(self) -> None:
+        self.codes: dict[str, tuple[GoogleIdentity, dict[str, str]]] = {}
+        self.down = False
+
+    def reset(self) -> None:
+        self.codes.clear()
+        self.down = False
+
+    def authorization_url(self, *, state: str, code_challenge: str, nonce: str, redirect_uri: str) -> str:
+        query = {
+            "state": state,
+            "code_challenge": code_challenge,
+            "nonce": nonce,
+            "redirect_uri": redirect_uri,
+        }
+        return f"{FAKE_GOOGLE_AUTHORIZE}?{urlencode(query)}"
+
+    def consent(self, authorization_url: str, identity: GoogleIdentity) -> str:
+        """The user picks `identity` on the consent screen; returns the code Google sends back."""
+        query = {k: v[0] for k, v in parse_qs(urlsplit(authorization_url).query).items()}
+        code = f"code-{uuid.uuid4().hex}"
+        self.codes[code] = (identity, query)
+        return code
+
+    async def identify(
+        self, *, code: str, code_verifier: str, redirect_uri: str, nonce: str
+    ) -> GoogleIdentity:
+        if self.down:
+            raise GoogleAuthError("ConnectError")
+        entry = self.codes.pop(code, None)
+        if entry is None:
+            raise GoogleAuthError("code refused")
+        identity, query = entry
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=")
+        if challenge.decode() != query["code_challenge"] or redirect_uri != query["redirect_uri"]:
+            raise GoogleAuthError("code refused")
+        if nonce != query["nonce"]:
+            raise GoogleAuthError("nonce mismatch")
+        return identity
 
 
 class FakeMirror:

@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     VERIFY_EMAIL_TTL_HOURS: int = Field(default=24, gt=0)
     RESET_PASSWORD_TTL_MIN: int = Field(default=60, gt=0)
 
+    # Google sign-in (ADR 0016). Both set, or neither (Google sign-in is then off). The OAuth client's
+    # authorised redirect URI must be API_BASE_URL + /api/v1/auth/google/callback, exactly.
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: SecretStr | None = None
+    GOOGLE_FLOW_TTL_MIN: int = Field(default=10, gt=0)  # time allowed on Google's consent screen
+    GOOGLE_PENDING_TTL_MIN: int = Field(default=15, gt=0)  # a new Google user choosing family or agency
+
     # Rate limits (backend.md §9)
     RATE_LIMIT_AUTH_PER_MIN: int = Field(default=5, gt=0)
     RATE_LIMIT_EMAIL_PER_HOUR: int = Field(default=3, gt=0)
@@ -125,6 +132,8 @@ class Settings(BaseSettings):
             ]
             if missing:
                 raise ValueError(f"NOTIFICATIONS_MIRROR=firestore needs {', '.join(missing)}")
+        if bool(self.GOOGLE_CLIENT_ID) != bool(self.GOOGLE_CLIENT_SECRET):
+            raise ValueError("Set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither")
         return self
 
     @model_validator(mode="after")
@@ -147,6 +156,15 @@ class Settings(BaseSettings):
     def is_deployed(self) -> bool:
         """Staging and production: real email, Secure cookies."""
         return self.APP_ENV in ("staging", "production")
+
+    @property
+    def google_enabled(self) -> bool:
+        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET)
+
+    @property
+    def google_redirect_uri(self) -> str:
+        """Must match the OAuth client's authorised redirect URI character for character."""
+        return f"{self.API_BASE_URL.rstrip('/')}/api/v1/auth/google/callback"
 
 
 def load_settings() -> Settings:

@@ -23,6 +23,8 @@ export const routes = {
     signup: "/signup",
     signupFor: (role: ServiceSlug) => `/signup?role=${role}`,
     agencySignup: "/signup/agency",
+    /** A new Google user chooses family or agency (the API's callback redirects here). */
+    googleSignup: "/signup/google",
     forgot: "/forgot-password",
     reset: "/reset-password",
     verifyEmail: "/verify-email",

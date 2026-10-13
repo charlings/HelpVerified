@@ -14,22 +14,50 @@ import { Input } from "@/components/ui/Input";
 import { routes } from "@/config/routes";
 import { authCopy } from "@/content/auth";
 import { messageForError } from "@/lib/error-messages";
-import { signIn } from "../client";
+import { restoreSession, signIn } from "../client";
 import { DemoAccounts } from "../components/DemoAccounts";
 import { EmailDivider, GoogleButton } from "../components/GoogleButton";
 import { destinationAfterLogin } from "../redirects";
 import { loginSchema, type LoginInput } from "../schemas";
+import { useSessionStore } from "../session";
 
 const copy = authCopy.login;
+
+type FormError = { title: string; message: string };
 
 export function LoginScreen() {
   const router = useRouter();
   const params = useSearchParams();
   const expired = params.get("expired") === "1";
   const next = params.get("next");
-  const [formError, setFormError] = useState<string | null>(null);
-  const [redirecting, setRedirecting] = useState(false);
+  const googleError = params.get("google_error");
+  // The API's Google callback set the refresh cookie and sent the browser here to restore the session.
+  const googleSignedIn = params.get("google") === "signed_in";
+  const [formError, setFormError] = useState<FormError | null>(
+    googleError
+      ? { title: authCopy.google.errorTitle, message: authCopy.google.errors[googleError] ?? authCopy.google.unknownError }
+      : null,
+  );
+  const [redirecting, setRedirecting] = useState(googleSignedIn);
   const alertRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!googleSignedIn) return;
+    let cancelled = false;
+    void restoreSession().then(() => {
+      if (cancelled) return;
+      const { user } = useSessionStore.getState();
+      if (user) {
+        router.replace(destinationAfterLogin(user.role, next));
+      } else {
+        setRedirecting(false);
+        setFormError({ title: authCopy.google.errorTitle, message: authCopy.google.restoreFailed });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [googleSignedIn, next, router]);
 
   const {
     register,
@@ -55,7 +83,7 @@ export function LoginScreen() {
       router.replace(destinationAfterLogin(user.role, next));
     } catch (error) {
       if (applyServerFieldErrors(error, setError, ["email", "password"]).length === 0) {
-        setFormError(messageForError(error));
+        setFormError({ title: copy.failedTitle, message: messageForError(error) });
       }
     }
   });
@@ -77,12 +105,12 @@ export function LoginScreen() {
 
       {expired ? <Alert tone="info">{copy.expired}</Alert> : null}
       {formError ? (
-        <Alert ref={alertRef} tone="danger" title={copy.failedTitle}>
-          {formError}
+        <Alert ref={alertRef} tone="danger" title={formError.title}>
+          {formError.message}
         </Alert>
       ) : null}
 
-      <GoogleButton />
+      <GoogleButton next={next} />
       <EmailDivider />
 
       <form noValidate onSubmit={onSubmit} aria-label="Sign in" className="grid gap-5">

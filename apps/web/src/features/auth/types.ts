@@ -18,3 +18,4 @@ export type LoginResponse = { access_token: string; user: SessionUser };
 export type RefreshResponse = { access_token: string };
 export type SignupResponse = { user: SessionUser };
 export type VerifyEmailResponse = { verified: true; role: Role };
+export type GooglePendingResponse = { email: string; full_name: string | null };

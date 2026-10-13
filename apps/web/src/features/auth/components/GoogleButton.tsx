@@ -7,12 +7,14 @@ import { buttonVariants } from "@/components/ui/Button";
 import { env, isMocking } from "@/config/env";
 import { authCopy } from "@/content/auth";
 import { cn } from "@/lib/cn";
+import { safeNext } from "../redirects";
 
 /**
- * Real mode: starts the backend OAuth flow. Demo mode: says plainly that Google sign-in isn't live yet,
- * rather than pretending to sign in.
+ * Real mode: starts the backend OAuth flow (a full-page navigation; the API redirects back to sign-in
+ * or to the Google sign-up page). `next` is where to return afterwards. Demo mode: says plainly that
+ * Google sign-in isn't live yet, rather than pretending to sign in.
  */
-export function GoogleButton() {
+export function GoogleButton({ next }: { next?: string | null }) {
   const [notice, setNotice] = useState(false);
   const content = (
     <>
@@ -24,7 +26,7 @@ export function GoogleButton() {
 
   if (!isMocking) {
     return (
-      <a href={`${env.NEXT_PUBLIC_API_BASE_URL}/auth/google/start`} className={className}>
+      <a href={googleStartUrl(next)} className={className}>
         {content}
       </a>
     );
@@ -40,6 +42,12 @@ export function GoogleButton() {
       </p>
     </div>
   );
+}
+
+export function googleStartUrl(next?: string | null): string {
+  const target = safeNext(next);
+  const query = target ? `?${new URLSearchParams({ next: target })}` : "";
+  return `${env.NEXT_PUBLIC_API_BASE_URL}/auth/google/start${query}`;
 }
 
 export function EmailDivider({ label = authCopy.divider }: { label?: string }) {

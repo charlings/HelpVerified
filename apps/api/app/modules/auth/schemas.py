@@ -78,3 +78,33 @@ class VerifyEmailOut(BaseModel):
 class ResetPasswordIn(BaseModel):
     token: Token
     password: NewPassword
+
+
+PrivacyNoticeVersion = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+
+
+class GooglePendingOut(BaseModel):
+    """The Google identity waiting to become an account (`GET /auth/google/pending`)."""
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"email": "ada@gmail.com", "full_name": "Ada Okafor"}]}
+    )
+
+    email: str
+    full_name: str | None = Field(description="The name on the Google account, if it has one")
+
+
+class GoogleCompleteIn(BaseModel):
+    """`POST /auth/google/complete`: what Google can't tell us. The email comes from Google."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"full_name": "Ada Okafor", "role": "family", "privacy_notice_version": "2026-10-05"}
+            ]
+        }
+    )
+
+    full_name: FullName
+    role: Literal["family", "agency_admin"]
+    privacy_notice_version: PrivacyNoticeVersion

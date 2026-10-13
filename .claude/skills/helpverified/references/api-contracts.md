@@ -57,7 +57,10 @@ The web app maps each code to a user-facing message in `apps/web/src/lib/error-m
 | POST | `/auth/resend-verification` | public | always 202 |
 | POST | `/auth/forgot-password` | public | always 202 |
 | POST | `/auth/reset-password` | public | `{token, password}` |
-| GET | `/auth/google/start`, `/auth/google/callback` | public | OAuth |
+| GET | `/auth/google/start?next=` | public | browser navigation → 303 to Google (PKCE, state cookie) (ADR 0016) |
+| GET | `/auth/google/callback` | public | 303 to `/login?google=signed_in&next=` (refresh cookie set), `/signup/google` (new user, pending cookie) or `/login?google_error=<code>` |
+| GET | `/auth/google/pending` | pending cookie | → `{email, full_name|null}`; 410 `TOKEN_EXPIRED` if none |
+| POST | `/auth/google/complete` | pending cookie | `{full_name, role: family|agency_admin, privacy_notice_version}` → 201 `{access_token, user}`, sets refresh cookie; 410, 409 `EMAIL_TAKEN` |
 | GET | `/me` | auth | `UserOut`: `{id, email, full_name, role, email_verified, phone, agency: {id, name, status} | null}` |
 | PATCH | `/me` | auth | name, phone |
 

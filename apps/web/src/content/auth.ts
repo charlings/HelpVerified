@@ -16,6 +16,34 @@ export const authCopy = {
   google: {
     label: "Continue with Google",
     demoNotice: "Google sign-in becomes available when the live service launches. Use email for now.",
+    errorTitle: "We couldn't sign you in with Google",
+    /** Keyed by the API's `?google_error=` codes (ADR 0016). */
+    errors: {
+      cancelled: "Google sign-in was cancelled. Try again, or use your email and password.",
+      expired: "Your Google sign-in took too long or was started in another browser. Please try again.",
+      failed: "Google didn't confirm your sign-in. Please try again.",
+      email_not_verified: "Your Google account's email address isn't verified with Google yet.",
+      suspended: "This account is suspended.",
+      other_google_account:
+        "This email's account is linked to a different Google account. Sign in with that one, or use your password.",
+      rate_limited: "Too many attempts. Wait a minute and try again.",
+      unavailable: "Google sign-in isn't available right now. Use your email and password.",
+    } as Record<string, string>,
+    unknownError: "Google sign-in didn't complete. Please try again.",
+    restoreFailed: "We couldn't finish signing you in with Google. Please try again.",
+  },
+  googleSignup: {
+    title: "Finish signing up",
+    subtitle: (email: string) => `You're signing up with Google as ${email}.`,
+    loading: "Loading your Google details…",
+    submit: "Create account",
+    submitting: "Creating account…",
+    failedTitle: "We couldn't create your account",
+    expiredTitle: "Your Google sign-in has expired",
+    expiredBody: "For your security it only lasts a few minutes. Continue with Google again to finish.",
+    errorTitle: "We couldn't load your Google details",
+    retry: "Try again",
+    back: "Back to sign in",
   },
   divider: "or continue with email",
   demoAccounts: {
