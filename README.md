@@ -6,7 +6,7 @@ Families in Nigeria hire nannies, drivers and cleaners whose **ID, guarantor, re
 - Working rules for contributors and Claude Code: `CLAUDE.md` and `.claude/skills/helpverified/`
 - Architecture and decisions: `docs/`
 
-**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold), B2 (auth), B3 (agencies, workers, verification) B4 (requests, proposals, placements) and B5 (Paystack payments, test mode) are done, and B6 (notifications, email and scheduled jobs) is code complete, pending the owner's email and Firebase accounts for its live checks; the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
+**Current phase:** 2 — Backend. Phase 1 (frontend, M1–M9) is complete and signed off (`docs/frontend-signoff.md`). B1 (API scaffold), B2 (auth), B3 (agencies, workers, verification) B4 (requests, proposals, placements) and B5 (Paystack payments, test mode) are done, and B6 (notifications, email and scheduled jobs) is code complete, pending the owner's email provider for its last live check (Firestore passed); the web app still runs on mock data, and nothing is connected to the real API, payments or email until B7. Backend work follows `docs/backend-handoff.md` and lands on the `feature/backend` branch, one commit per milestone, merged into `main` later.
 
 ## Requirements
 

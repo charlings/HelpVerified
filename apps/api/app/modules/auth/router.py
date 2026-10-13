@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Request, Response, status
 
 from app.core.config import Settings
 from app.core.deps import AgencyServiceDep, AuthServiceDep, LimiterDep, SettingsDep
@@ -62,19 +62,25 @@ def _check_origin(request: Request, settings: Settings) -> None:
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(
-    body: SignupIn, request: Request, auth: AuthServiceDep, limiter: LimiterDep, settings: SettingsDep
+    body: SignupIn,
+    request: Request,
+    background: BackgroundTasks,
+    auth: AuthServiceDep,
+    limiter: LimiterDep,
+    settings: SettingsDep,
 ) -> SignupOut:
-    """Creates a family or agency-admin account and emails a verification link."""
+    """Creates a family or agency-admin account and emails a verification link (after the response)."""
     await limiter.hit(
         "auth", identifier(_client_ip(request), body.email), settings.RATE_LIMIT_AUTH_PER_MIN, MINUTE
     )
-    user = await auth.signup(
+    user, message = await auth.signup(
         email=body.email,
         password=body.password,
         full_name=body.full_name,
         role=UserRole(body.role),
         privacy_notice_version=body.privacy_notice_version,
     )
+    background.add_task(auth.send_email, message)
     return SignupOut(user=UserOut.of(user))
 
 
@@ -128,26 +134,39 @@ async def verify_email(body: VerifyEmailIn, auth: AuthServiceDep) -> VerifyEmail
 
 @router.post("/resend-verification", status_code=status.HTTP_202_ACCEPTED)
 async def resend_verification(
-    body: EmailIn, auth: AuthServiceDep, limiter: LimiterDep, settings: SettingsDep
+    body: EmailIn,
+    background: BackgroundTasks,
+    auth: AuthServiceDep,
+    limiter: LimiterDep,
+    settings: SettingsDep,
 ) -> Response:
-    """Always 202, so the response doesn't reveal whether the email has an account."""
+    """Always 202, so the response doesn't reveal whether the email has an account. The email (if any)
+    is sent after the response, so the provider's speed doesn't show in the response time."""
     await limiter.hit("email", identifier(body.email), settings.RATE_LIMIT_EMAIL_PER_HOUR, HOUR)
-    await auth.resend_verification(body.email)
+    background.add_task(auth.send_email, await auth.resend_verification(body.email))
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 
 @router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
 async def forgot_password(
-    body: EmailIn, auth: AuthServiceDep, limiter: LimiterDep, settings: SettingsDep
+    body: EmailIn,
+    background: BackgroundTasks,
+    auth: AuthServiceDep,
+    limiter: LimiterDep,
+    settings: SettingsDep,
 ) -> Response:
-    """Always 202, so the response doesn't reveal whether the email has an account."""
+    """Always 202, so the response doesn't reveal whether the email has an account. The email (if any)
+    is sent after the response, so the provider's speed doesn't show in the response time."""
     await limiter.hit("email", identifier(body.email), settings.RATE_LIMIT_EMAIL_PER_HOUR, HOUR)
-    await auth.forgot_password(body.email)
+    background.add_task(auth.send_email, await auth.forgot_password(body.email))
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
-async def reset_password(body: ResetPasswordIn, auth: AuthServiceDep) -> Response:
-    """Sets a new password and signs the user out everywhere; 410 TOKEN_EXPIRED for a used or old link."""
-    await auth.reset_password(body.token, body.password)
+async def reset_password(
+    body: ResetPasswordIn, background: BackgroundTasks, auth: AuthServiceDep
+) -> Response:
+    """Sets a new password and signs the user out everywhere; 410 TOKEN_EXPIRED for a used or old link.
+    The owner is then told by email that the password changed."""
+    background.add_task(auth.send_email, await auth.reset_password(body.token, body.password))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

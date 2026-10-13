@@ -272,9 +272,9 @@ def test_idle_unlisted_workers_lose_their_evidence_and_verification(
     listed = listed_worker(agc.id, full_name="Bola Ade")
     listed_doc, _ = add_document(cloudinary, listed, "guarantor")
 
-    with later(days=30 * 23):
+    with later(days=30 * 11):  # RETENTION_IDLE_WORKER_MONTHS = 12
         assert run_job(api, "document_retention") == 0
-    with later(days=30 * 25):
+    with later(days=30 * 13):
         assert run_job(api, "document_retention") == 1
 
     assert document_state(idle_doc) == (True, True)
@@ -292,7 +292,7 @@ def test_a_worker_in_a_placement_keeps_their_evidence(api: TestClient, cloudinar
     run_sql("UPDATE workers SET listing_status = 'delisted' WHERE id = :w", w=flow.worker_id)
     document, _ = add_document(cloudinary, flow.worker_id, "address")
 
-    with later(days=30 * 25):
+    with later(days=30 * 13):
         assert run_job(api, "document_retention") == 0
 
     assert document_state(document) == (False, False)

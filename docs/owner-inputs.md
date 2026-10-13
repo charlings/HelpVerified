@@ -2,7 +2,7 @@
 
 Everything the build is waiting on from the owner: accounts, keys, prices and decisions. It's updated at the end of every milestone and reported with the milestone summary. Keys and secrets go into `apps/api/.env` (never into chat or git).
 
-Last updated: 2026-10-11. B6 is code complete and committed, pending #3, #4, #5 and #8a; it's signed off once the email and Firestore live checks pass.
+Last updated: 2026-10-13. B6 is code complete and committed, pending only #3's end-to-end test (#5 and #8a decided 2026-10-13). Firestore passed (#4 done). Brevo SMTP connectivity passed. The end-to-end email test is deferred to B7 (owner, 2026-10-13), so B6's email criterion stays "partly met" until then.
 
 ## Needed now (built without them; they unlock features)
 
@@ -17,9 +17,7 @@ B6 works without these: emails go to `apps/api/.outbox/`, the feed is served fro
 
 | # | What | Why | How |
 | --- | --- | --- | --- |
-| 3 | **Email provider** and its SMTP login | Real emails (verify, reset, proposals, trials, approvals) | Choose any provider with SMTP (Resend, Brevo, Postmark, SendGrid). Verify your sending domain there. In `apps/api/.env` set `EMAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USERNAME`, `SMTP_PASSWORD`, and `EMAIL_FROM` on that domain. Then run `uv run python -m scripts.email_live_check you@example.com` |
-| 4 | **Firebase project** and a service-account key (JSON) | The live notification feed is mirrored to Firestore | Firebase console → new project → Build → Firestore → create (production mode). Project settings → Service accounts → Generate new private key. Save the file **outside the repo** (e.g. `C:\Users\<you>\keys\helpverified-firebase.json`). Set `NOTIFICATIONS_MIRROR=firestore`, `FIREBASE_PROJECT_ID` and `FIREBASE_CREDENTIALS_FILE` (the file's path). Then run `uv run python -m scripts.firestore_live_check` |
-| 5 | **Idle-worker retention period** | NDPA storage limitation; the nightly job deletes old evidence | Confirm or change: all evidence of unlisted workers idle for **24 months** (`RETENTION_IDLE_WORKER_MONTHS`). (Rejected evidence: 90 days, decided below. Ended placements are kept 6 years; that isn't automated, as none can reach 6 years before 2032) |
+| 3 | **Email provider** and its SMTP login. *Brevo is set up and its connectivity check passed on 2026-10-13. Still to do: one real app email end to end (signup, verify and reset through the web app). The owner deferred it to B7 on 2026-10-13; then this row moves to Decided* | Real emails (verify, reset, proposals, trials, approvals) | Choose any provider with SMTP (Resend, Brevo, Postmark, SendGrid). Verify your sending domain there. In `apps/api/.env` set `EMAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USERNAME`, `SMTP_PASSWORD`, and `EMAIL_FROM` on that domain. Then run `uv run python -m scripts.email_live_check you@example.com` |
 
 ## Needed before B7 (connecting the web app)
 
@@ -33,7 +31,7 @@ B6 works without these: emails go to `apps/api/.outbox/`, the feed is served fro
 | # | What | Why | How |
 | --- | --- | --- | --- |
 | 8 | **Render account** (API, PostgreSQL, Redis) and **Vercel account** (web) | Hosting (ADR 0001) | Create both. I'll walk through each setting |
-| 8a | **Render plan for the API**: a paid instance that stays up, or Render Cron Jobs | The scheduled jobs (hold expiry every minute, reminders, retries) run inside the API; Render's free tier sleeps when idle, so they'd stop (ADR 0015) | Decide: a paid web service that doesn't sleep (simplest), or Render Cron Jobs that run `python -m app.jobs run <name>`. Check Render's current pricing for both |
+| 8a | **Render Cron Jobs for the scheduled jobs** (decided 2026-10-13) | Set up at deploy: one cron job per job, schedules in ADR 0015 (in UTC), and `JOBS_ENABLED=false` on the API web service | At B8: check Render's current cron pricing and minimum interval (two jobs run every minute) and confirm the cost with me before creating them |
 | 9 | **Domain names** | The refresh cookie needs the web app and API on the same site (ADR 0011), for example `helpverified.ng` and `api.helpverified.ng` | Buy or choose a domain; DNS records come at deploy time |
 | 10 | **Paystack webhook URL** | Paystack can only call a public address | Once deployed: Paystack dashboard → Settings → API Keys & Webhooks → set `https://<api-domain>/api/v1/webhooks/paystack` |
 | 11 | **Paystack test vs live for the demo** | Open decision (CLAUDE.md) | Decide. Live needs a verified Paystack business and live keys set only in production |
@@ -57,3 +55,6 @@ B6 works without these: emails go to `apps/api/.outbox/`, the feed is served fro
 | Google sign-in | Deferred to its own stage before B7 | 2026-10-07 (ADR 0011) |
 | Evidence of rejected checks | Deleted after 90 days (`RETENTION_REJECTED_EVIDENCE_DAYS=90`) | 2026-10-11 (ADR 0015) |
 | Trial reminders | Sent 2 days before a trial ends (`TRIAL_REMINDER_DAYS=2`) | 2026-10-11 (ADR 0015) |
+| Firebase (#4) | Project `helpverified`; key kept outside the repo; live check passed | 2026-10-12 |
+| Idle-worker evidence (#5) | Deleted after 12 months idle (`RETENTION_IDLE_WORKER_MONTHS=12`); owner left the number to Claude Code. Ended placements kept 6 years (not automated before 2032) | 2026-10-13 (ADR 0015) |
+| Where scheduled jobs run in production (#8a) | Render Cron Jobs; the API web service runs with `JOBS_ENABLED=false` | 2026-10-13 (ADR 0015) |

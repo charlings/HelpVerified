@@ -1,7 +1,11 @@
 """Sign-up, sign-in, sessions and one-time tokens (backend.md §4, security-and-compliance.md §4).
 
-Every method owns its transaction. Emails are sent after the commit, and a failed send is
-logged (without the link) rather than undoing the change: the user can ask for a new link.
+Every method owns its transaction. Methods that email return the message instead of sending it; the
+router passes it to `send_email` as a background task, after the response has gone out. A slow
+provider then doesn't hold the response, so the email-sending paths can't be timed to learn whether an
+account exists (the token itself is written inside the request, so timing is not perfectly uniform).
+A failed send is logged with its error type only, never undoing the change: the user can ask for a
+new link.
 """
 
 import uuid
@@ -56,7 +60,8 @@ class AuthService:
 
     async def signup(
         self, *, email: str, password: str, full_name: str, role: UserRole, privacy_notice_version: str
-    ) -> User:
+    ) -> tuple[User, EmailMessage]:
+        """The new user and their verification email (for `send_email`)."""
         now = utcnow()
         async with self.session.begin():
             if await self.users.get_by_email(email):
@@ -72,9 +77,8 @@ class AuthService:
                 )
             )
             token = await self._issue_one_time(user.id, TokenPurpose.verify_email, now)
-        await self._send(self._verify_message(user, token), user)
         log.info("user.signed_up", user_id=str(user.id), role=user.role.value)
-        return user
+        return user, self._verify_message(user, token)
 
     async def verify_email(self, token: str) -> User:
         now = utcnow()
@@ -84,37 +88,37 @@ class AuthService:
                 user.email_verified_at = now
         return user
 
-    async def resend_verification(self, email: str) -> None:
-        """Does nothing (and says nothing) for unknown or already verified emails."""
+    async def resend_verification(self, email: str) -> EmailMessage | None:
+        """A new verification email, or None (and nothing said) for unknown or already verified emails."""
         now = utcnow()
         async with self.session.begin():
             user = await self.users.get_by_email(email)
             if user is None or user.email_verified_at is not None:
-                return
+                return None
             await self.tokens.use_all_one_time(user.id, TokenPurpose.verify_email, now)
             token = await self._issue_one_time(user.id, TokenPurpose.verify_email, now)
-        await self._send(self._verify_message(user, token), user)
+        return self._verify_message(user, token)
 
-    async def forgot_password(self, email: str) -> None:
-        """Does nothing (and says nothing) for unknown or suspended accounts."""
+    async def forgot_password(self, email: str) -> EmailMessage | None:
+        """A reset email, or None (and nothing said) for unknown or suspended accounts."""
         now = utcnow()
         async with self.session.begin():
             user = await self.users.get_by_email(email)
             if user is None or user.status is AccountStatus.suspended:
-                return
+                return None
             await self.tokens.use_all_one_time(user.id, TokenPurpose.reset_password, now)
             token = await self._issue_one_time(user.id, TokenPurpose.reset_password, now)
-        message = emails.reset_password(
+        return emails.reset_password(
             user.email,
             user.full_name,
             self.settings.WEB_BASE_URL,
             token,
             self.settings.RESET_PASSWORD_TTL_MIN,
         )
-        await self._send(message, user)
 
-    async def reset_password(self, token: str, new_password: str) -> None:
-        """Sets the password, spends every reset link and signs the user out everywhere."""
+    async def reset_password(self, token: str, new_password: str) -> EmailMessage:
+        """Sets the password, spends every reset link and signs the user out everywhere. Returns the
+        "your password was changed" notice for the account's owner."""
         now = utcnow()
         async with self.session.begin():
             user = await self._consume_one_time(token, TokenPurpose.reset_password, now)
@@ -122,6 +126,18 @@ class AuthService:
             user.password_hash = hash_password(new_password)
             await self.tokens.revoke_all_for_user(user.id, now)
         log.info("user.password_reset", user_id=str(user.id))
+        return emails.password_changed(user.email, user.full_name, self.settings.WEB_BASE_URL)
+
+    async def send_email(self, message: EmailMessage | None) -> None:
+        """Sends an auth email; run as a background task after the response. Nothing for None, so callers
+        schedule it the same way whether or not an account matched. A failure is logged by template and
+        error type only: the message, its link (a one-time token) and the address never reach the logs."""
+        if message is None:
+            return
+        try:
+            await self.email.send(message)
+        except Exception as exc:
+            log.error("email.send_failed", kind=message.kind, error=type(exc).__name__)
 
     # Sessions
 
@@ -234,10 +250,3 @@ class AuthService:
             token,
             self.settings.VERIFY_EMAIL_TTL_HOURS,
         )
-
-    async def _send(self, message: EmailMessage, user: User) -> None:
-        try:
-            await self.email.send(message)
-        except Exception:
-            # Never log the message or its link: it carries a one-time token.
-            log.exception("email.send_failed", kind=message.kind, user_id=str(user.id))

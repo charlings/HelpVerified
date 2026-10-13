@@ -94,7 +94,7 @@ class Settings(BaseSettings):
 
     # Retention (security-and-compliance.md §1, NDPA storage limitation). Proposed defaults; owner to confirm.
     RETENTION_REJECTED_EVIDENCE_DAYS: int = Field(default=90, gt=0)
-    RETENTION_IDLE_WORKER_MONTHS: int = Field(default=24, gt=0)
+    RETENTION_IDLE_WORKER_MONTHS: int = Field(default=12, gt=0)  # owner, 2026-10-13 (ADR 0015 item 9)
 
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     MAX_BODY_BYTES: int = Field(default=1_048_576, gt=0)

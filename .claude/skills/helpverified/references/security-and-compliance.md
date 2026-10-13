@@ -21,7 +21,7 @@ The Nigeria Data Protection Act 2023 and the NDPC's implementation directive app
 | --- | --- |
 | Lawful basis and consent | Agency confirms, per worker, that the worker consented to collection and platform sharing (checkbox + timestamp stored on the worker; consent form template downloadable). Families and agencies accept the privacy notice at signup (version stored). |
 | Purpose limitation and minimisation | Collect only what the four checks need. No raw NIN, no BVN, no biometric data. Free-text fields warn against entering extra ID numbers. |
-| Storage limitation | Retention: documents of workers with no placement for 24 months, and of rejected items after 90 days, are deleted by a job (configurable). Ended placements keep records 6 years for disputes; then anonymise. Document retention rules in `docs/privacy-retention.md`. |
+| Storage limitation | Retention: documents of workers with no placement for 12 months (owner, 2026-10-13; ADR 0015), and of rejected items after 90 days, are deleted by a job (configurable). Ended placements keep records 6 years for disputes; then anonymise. Document retention rules in `docs/privacy-retention.md`. |
 | Security of processing | Encryption in transit (TLS everywhere), at rest (managed Postgres + Cloudinary), access control by role and tenant, signed short-lived URLs, access logging, least-privilege API keys. |
 | Data subject rights | Admin tools to export and delete a worker's or user's data on request; deletion removes Cloudinary assets and anonymises rows that must stay for audit. |
 | Processors | Cloudinary, Paystack, Firebase, email provider listed in the privacy notice with purpose; keep their DPAs on file. |

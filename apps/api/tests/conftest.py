@@ -43,6 +43,10 @@ TEST_ENV = {
     "PAYSTACK_AGENCY_PLAN_CODE": "PLN_test_agency_monthly",
     # Tests run jobs themselves. The `api` app mirrors notifications to tests.fakes.FakeMirror.
     "JOBS_ENABLED": "false",
+    # Never the owner's live SMTP or Firestore from apps/api/.env: environment variables win over the
+    # .env file, so these pin every test app to the outbox and no mirror (tests/unit/test_isolation.py).
+    "EMAIL_PROVIDER": "outbox",
+    "NOTIFICATIONS_MIRROR": "none",
 }
 os.environ.update(TEST_ENV)
 

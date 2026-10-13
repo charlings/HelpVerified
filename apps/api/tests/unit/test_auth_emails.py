@@ -12,6 +12,7 @@ def test_link_paths_exist_in_the_web_routes() -> None:
 
     assert f'verifyEmail: "{emails.VERIFY_EMAIL_PATH}"' in routes
     assert f'reset: "{emails.RESET_PASSWORD_PATH}"' in routes
+    assert f'forgot: "{emails.FORGOT_PASSWORD_PATH}"' in routes
 
 
 def test_verify_email_message() -> None:
@@ -28,3 +29,13 @@ def test_reset_password_message() -> None:
 
     assert message.link == "http://localhost:3000/reset-password?token=tok-456"
     assert "60 minutes" in message.text
+
+
+def test_password_changed_message_carries_no_token() -> None:
+    message = emails.password_changed("ada@example.com", "Ada", "http://localhost:3000/")
+
+    assert message.kind == "password_changed"
+    assert message.link == "http://localhost:3000/forgot-password"
+    assert message.link in message.text
+    assert "token" not in message.text
+    assert "wasn't you" in message.text

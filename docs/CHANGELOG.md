@@ -2,7 +2,17 @@
 
 ## B6 — Notifications + jobs (2026-10-08)
 
-**Status: code complete — pending owner inputs #3, #4, #5, #8a.** Committed to `feature/backend` on 2026-10-11 at the owner's request. The acceptance criteria are **not signed off** until the email and Firestore live checks pass against the owner's accounts. Owner decided on 2026-10-11: rejected evidence deleted after 90 days, trial reminders 2 days before the end.
+**Status: code complete — pending owner input #3's end-to-end test** (#4 done: the Firestore live check passed 2026-10-12; #5 and #8a decided 2026-10-13: idle-worker evidence after 12 months, and jobs on Render Cron Jobs in production). For #3, the owner's Brevo SMTP connectivity check passed on 2026-10-13. A real app email end to end (a reset) is deferred to B7 by the owner.
+
+### Addendum: email audit and hardening (2026-10-13, owner-approved)
+- **Audit:** the API builds one email sender from settings, and verify-email, reset-password and all notification emails go through it, as do jobs and the command-line runner. The SMTP password is a `SecretStr`, used only when the sender is built, and is never logged or printed.
+- **Fixed:**
+  1. Tests could reach the owner's live SMTP and Firestore, because test settings didn't override `.env`. They're now pinned to the outbox and no mirror. A regression test was checked to fail without the pin.
+  2. Signup, resend-verification and forgot-password sent the email inside the request, so a known account's response waited on the provider (an account-existence timing signal). Emails now go after the response (FastAPI `BackgroundTasks`), and responses are unchanged. Timing isn't guaranteed identical, since a known account still costs a token write.
+  3. Auth-email failures now log only the template and error type.
+  4. New: a "your password was changed" email after a reset, with no password, token or reset link.
+- **Files:** `app/modules/auth/service.py`, `router.py`, `emails.py`; `tests/conftest.py`, `tests/unit/test_auth_emails.py`; new `tests/unit/test_isolation.py` and `tests/integration/test_auth_email_delivery.py`; ADR 0015 item 5 amended.
+- **Checks:** ruff and format clean; `mypy app tests scripts` strict, 167 files, no issues; `pytest -q` **436 passed** (425 plus 11 new). Committed to `feature/backend` on 2026-10-11 at the owner's request. The acceptance criteria are **not signed off** until the email and Firestore live checks pass against the owner's accounts. Owner decided on 2026-10-11: rejected evidence deleted after 90 days, trial reminders 2 days before the end.
 
 ### 1. Objective
 People hear about what happens to them: every important event writes a notification with the change itself, delivered after commit by email and to a Firestore mirror, with retries that can never undo the event. The time-based rules now run on their own, as scheduled jobs: holds expire, trials are reminded, checks expire, subscriptions sync, refunds and deliveries retry, and old evidence is deleted.
@@ -35,7 +45,7 @@ ADR 0015:
 - Who is told about what is set out in one table.
 - APScheduler in the API with a Redis lock per job; every job is safe to run late or twice.
 - Refunds are tracked and retried.
-- Retention defaults (90 days, 24 months), with evidence destroyed in Cloudinary.
+- Retention periods (90 days for rejected evidence, 12 months for idle workers; the owner decided both, proposed 24 months originally), with evidence destroyed in Cloudinary.
 - No cache (nothing public to cache).
 
 ### 5. Tests and checks
@@ -45,7 +55,7 @@ ADR 0015:
 | `pytest -q` | **425 passed** (365 before, plus 60 new; about 7 minutes on this machine) |
 | Firestore failure (milestone criterion) | Mirror down → the proposal stands, the feed has it, the email still goes; the mirror retries after backoff without emailing again |
 | Delivery | Sent once, never twice; email down → retried; gives up after the last attempt; suspended users get no email; marking read re-mirrors `read: true`; with immediate delivery on, the email goes with no explicit call |
-| Jobs with a frozen clock (milestone criterion) | Holds: none at 29 min, cancelled at 31 (request reopens, family emailed). Reminders: none 3 days before, one 2 days before, never repeated, a missed day caught up, none after the end. Expiry: delists and names the checks; a running placement continues. Subscription lapse notified once. Refund: refused → retried → sent once; stops at the cap. Retention: rejected evidence at 91 days (not 89); idle unlisted worker at 25 months (not 23), checks expired, audited; listed and placed workers untouched; a failed Cloudinary delete retried |
+| Jobs with a frozen clock (milestone criterion) | Holds: none at 29 min, cancelled at 31 (request reopens, family emailed). Reminders: none 3 days before, one 2 days before, never repeated, a missed day caught up, none after the end. Expiry: delists and names the checks; a running placement continues. Subscription lapse notified once. Refund: refused → retried → sent once; stops at the cap. Retention: rejected evidence at 91 days (not 89); idle unlisted worker at 13 months (not 11; 25 and 23 before the owner chose 12 months), checks expired, audited; listed and placed workers untouched; a failed Cloudinary delete retried |
 | Runner | A held lock skips the run and the lock is released after it; a failing job is contained and its lock released |
 | Units | Links exist in `routes.ts`; SMTP STARTTLS/TLS and login; Firestore JWT (RS256 verified) and document encoding, refusals → `MirrorError`, the key never in errors; settings refuse incomplete providers; daily jobs at 08:00, 02:00 and 03:00 WAT |
 | Migrations | up → base → up; models match migrations |
@@ -53,27 +63,27 @@ ADR 0015:
 
 ### 6. Known issues
 - Real email and the Firestore mirror haven't run against real accounts: the owner's provider and Firebase project are pending (owner inputs 3 and 4; the live-check scripts are ready).
-- The in-process scheduler needs an API that doesn't sleep; Render's free tier does (owner input 8a).
+- The in-process scheduler needs an API that doesn't sleep, which Render's free tier doesn't guarantee. Owner decision 8a: production runs the jobs as Render Cron Jobs (schedules in ADR 0015). B8 must check cron pricing and the minimum interval, and make a skipped run (lock held) exit 0.
 - The web app doesn't show notifications yet. B7 adds the bell, Firebase custom tokens and security rules, and a label for the new audit action `worker.evidence_deleted`.
 - Anonymising ended placements after 6 years isn't automated (nothing can be that old before 2032).
 
 ### 7. Assumptions
 - A rejected check's `updated_at` is when it was rejected (it changes only when reopened).
-- A worker is "idle" when unlisted, not in an active placement, and nothing happened to them (edit, placement start or end) for 24 months.
+- A worker is "idle" when unlisted, not in an active placement, and nothing happened to them (edit, placement start or end) for 12 months.
 - The family isn't emailed when it cancels its own hold, and the agency isn't emailed when a hold is released (in-app only).
 
 ### 8. Acceptance criteria (B6 row: "Firestore feed, emails, all jobs, cache; jobs tested with frozen clock; Firestore failure does not roll back state")
 | Item | Result |
 | --- | --- |
-| Firestore feed | **Pending**: built and tested against a fake; not signed off until `scripts.firestore_live_check` passes on the owner's Firebase project (#4) |
-| Emails | **Pending**: SMTP sender built and tested against a fake server, outbox in development; not signed off until `scripts.email_live_check` passes on the owner's provider (#3) |
+| Firestore feed | **Met**: `scripts.firestore_live_check` passed on 2026-10-12 against the owner's project `helpverified` (write, then the read-flag update) |
+| Emails | **Partly met**: `scripts.email_live_check` passed on the owner's Brevo account (2026-10-13), which proves connectivity only. The verify, reset, password-changed and notification emails are wired to that sender and tested against a fake. A real app email end to end isn't yet sent, so this isn't signed off. The owner deferred that test to B7 (2026-10-13), when the web app talks to the real API |
 | All jobs | **Met**: the five in backend.md §8, plus refund retry and retention |
 | Cache | **Not applicable**: no public, non-personal endpoint exists (ADR 0015 item 11) |
 | Jobs tested with a frozen clock | **Met** |
 | Firestore failure doesn't roll back state | **Met** |
 
 ### 9. Recommended next step
-The owner supplies #3 and #4 and runs both live checks; then B6 is signed off (#5, the 24-month idle period, and #8a, the Render plan, are still to be decided). Then the Google sign-in stage (or a decision to drop it for v1), then B7: connect the web app to the API, including the notification bell.
+B6's remaining criterion (a real app email end to end) is checked in B7, as the owner chose. Next: the Google sign-in stage (or a decision to drop it for v1), then B7: connect the web app to the API, including the notification bell.
 
 ## B5 — Payments (2026-10-07)
 
