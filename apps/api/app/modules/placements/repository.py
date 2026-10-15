@@ -48,6 +48,12 @@ class PlacementRepository:
             select(Placement).where(Placement.worker_id == worker_id, Placement.status.in_(ACTIVE))
         )
 
+    async def active_for_request(self, request_id: uuid.UUID) -> Placement | None:
+        """At most one (placements_one_active_per_request). No lock: the caller holds the request's."""
+        return await self.session.scalar(
+            select(Placement).where(Placement.request_id == request_id, Placement.status.in_(ACTIVE))
+        )
+
     async def occupying(self, worker_id: uuid.UUID, now: datetime) -> Placement | None:
         """The active placement that makes the worker unavailable, ignoring an unpaid hold that has
         lapsed (the job or the next accept cancels it)."""
@@ -74,13 +80,17 @@ class PlacementRepository:
         )
         return {request_id: placement_id for request_id, placement_id in rows}  # later rows win
 
-    async def expired_holds(self, now: datetime, worker_id: uuid.UUID | None = None) -> list[Placement]:
+    async def expired_holds(
+        self, now: datetime, worker_id: uuid.UUID | None = None, request_id: uuid.UUID | None = None
+    ) -> list[Placement]:
         """Unpaid holds past their deadline, locked; rows another transaction holds are skipped."""
         query = select(Placement).where(
             Placement.status == PlacementStatus.pending_payment, Placement.hold_expires_at <= now
         )
         if worker_id:
             query = query.where(Placement.worker_id == worker_id)
+        if request_id:
+            query = query.where(Placement.request_id == request_id)
         return list(await self.session.scalars(query.with_for_update(skip_locked=True)))
 
     async def add_event(

@@ -22,6 +22,7 @@ from app.core.dates import lagos_date
 from app.core.errors import (
     IllegalTransition,
     NotFound,
+    PaymentProviderError,
     ReplacementWindowClosed,
     RequestNotOpen,
     WorkerNotListed,
@@ -48,7 +49,7 @@ from app.modules.placements.repository import PlacementRepository
 from app.modules.placements.schemas import PlacementOut, PlacementSummary
 from app.modules.placements.state_machine import can_transition, in_replacement_window
 from app.modules.placements.views import PlacementViews
-from app.modules.requests.models import ProposalStatus, Request, RequestStatus
+from app.modules.requests.models import Proposal, ProposalStatus, Request, RequestStatus
 from app.modules.requests.repository import RequestRepository
 from app.modules.requests.schemas import FamilyRequestOut
 from app.modules.requests.views import RequestViews
@@ -93,7 +94,10 @@ class PlacementService:
 
     async def accept(self, user: User, proposal_id: uuid.UUID) -> Accepted:
         """database.md §7. Checks, in the contract's order: owned (404) → request open → proposal pending →
-        worker listed with all four checks unexpired (rule 1) → worker free (rule 2)."""
+        worker listed with all four checks unexpired (rule 1) → worker free (rule 2).
+
+        Accepting again while this proposal's own hold is live resumes it (the same placement and checkout)
+        instead of 409, so a family whose checkout failed can simply retry (ADR 0017)."""
         now = utcnow()
         async with self.session.begin():
             family = await self.families.for_user(user.id)
@@ -105,71 +109,118 @@ class PlacementService:
                 raise NotFound()
             proposal = await self.requests.proposal(proposal_id, for_update=True)
             assert proposal is not None  # noqa: S101  # proposals are never deleted
-            if request.status is not RequestStatus.open:
-                raise RequestNotOpen()
-            if proposal.status is not ProposalStatus.pending:
-                raise IllegalTransition("This proposal can't be accepted.")
-            worker = await self.workers.get(proposal.worker_id, for_update=True)  # the rule-2 lock
-            assert worker is not None  # noqa: S101  # FK
-            if worker.listing_status is not ListingStatus.listed:
-                raise WorkerNotListed()
-            if await self.checks.count_verified_unexpired(worker.id, now) < len(KINDS):
-                raise WorkerNotListed()
-            # A lapsed hold on this worker no longer counts; clear it now rather than wait for the job.
-            for stale in await self.placements.expired_holds(now, worker_id=worker.id):
+            # This request's own lapsed hold: release it as the job would, so the retry starts afresh.
+            lapsed = await self.placements.expired_holds(now, request_id=request.id)
+            for stale in lapsed:
                 await self._release_hold(stale, None, None, EndReason.payment_expired, now)
-            if await self.placements.active_for_worker(worker.id):
-                raise WorkerUnavailable()
+            if lapsed:
+                await self.session.refresh(request)
+                await self.session.refresh(proposal)
+            placement = await self._live_hold(request, proposal.id, now)
+            resumed = placement is not None
+            if placement is None:
+                placement = await self._hold_worker(user, family.id, request, proposal, now)
+            summary = await self.views.summary(placement)
+        if resumed:
+            log.info("placement.accept_resumed", placement_id=str(placement.id))
+        else:
+            log.info("placement.created", placement_id=str(placement.id), status=placement.status.value)
+        if placement.status is not PlacementStatus.pending_payment:
+            return Accepted(placement=summary, checkout=None)  # a free replacement starts its trial at once
+        return Accepted(placement=summary, checkout=await self._checkout(placement, user.email))
 
-            replaced = await self._replaced_placement(request)
-            fee_waived = (
-                replaced is not None and replaced.replacements_used <= self.settings.FREE_REPLACEMENTS
-            )
-            placement = await self.placements.add(  # the index backs up the check above
-                Placement(
-                    request_id=request.id,
-                    proposal_id=proposal.id,
-                    worker_id=worker.id,
-                    family_id=family.id,
-                    agency_id=proposal.agency_id,
-                    replacements_used=replaced.replacements_used if replaced else 0,
-                    **(
-                        self._trial_fields(request, now)
-                        if fee_waived
-                        else {
-                            "status": PlacementStatus.pending_payment,
-                            "hold_expires_at": now + timedelta(minutes=self.settings.PAYMENT_HOLD_MINUTES),
-                        }
-                    ),
-                )
-            )
-            await self.placements.add_event(
-                placement.id, None, placement.status, user.id, FREE_REPLACEMENT_NOTE if fee_waived else None
-            )
-            proposal.status = ProposalStatus.accepted
-            await self.requests.set_proposals(
-                request.id, (ProposalStatus.pending,), ProposalStatus.superseded, except_id=proposal.id
-            )
-            request.status = RequestStatus.matched
-            if replaced is not None:
-                replacement = await self.placements.open_replacement_for(replaced.id)
-                if replacement is not None:
-                    replacement.status = ReplacementStatus.fulfilled
-            await self.session.flush()
-            parties = await self.notices.placement_parties(placement.id)
-            await self.notices.add_many(
-                parties.agency_user_ids,
-                messages.proposal_accepted(
-                    placement.id, parties.family_name, parties.worker_name, fee_waived=fee_waived
+    async def _live_hold(self, request: Request, proposal_id: uuid.UUID, now: datetime) -> Placement | None:
+        """The unpaid, unexpired hold this proposal already created, if any. The caller holds the request
+        lock, so no other accept on this request can run alongside."""
+        if request.status is not RequestStatus.matched:
+            return None
+        placement = await self.placements.active_for_request(request.id)
+        if (
+            placement is None
+            or placement.proposal_id != proposal_id
+            or placement.status is not PlacementStatus.pending_payment
+            or placement.hold_expires_at is None
+            or placement.hold_expires_at <= now
+        ):
+            return None
+        return placement
+
+    async def _checkout(self, placement: Placement, payer_email: str) -> Checkout:
+        """Outside the accept transaction (database.md §7): the hold stands even if the provider fails. The
+        error then names the held placement, so the client can offer to pay again or cancel."""
+        # Read now: the checkout's rollback expires the ORM object, and reloading it here would need IO.
+        held = {
+            "placement_id": str(placement.id),
+            "hold_expires_at": placement.hold_expires_at.isoformat() if placement.hold_expires_at else None,
+        }
+        try:
+            return await self.payments.start_placement_checkout(placement.id, payer_email)
+        except PaymentProviderError as error:
+            error.details |= held
+            raise
+
+    async def _hold_worker(
+        self, user: User, family_id: uuid.UUID, request: Request, proposal: Proposal, now: datetime
+    ) -> Placement:
+        """The checks and writes of database.md §7, inside accept's transaction (request and proposal
+        already locked)."""
+        if request.status is not RequestStatus.open:
+            raise RequestNotOpen()
+        if proposal.status is not ProposalStatus.pending:
+            raise IllegalTransition("This proposal can't be accepted.")
+        worker = await self.workers.get(proposal.worker_id, for_update=True)  # the rule-2 lock
+        assert worker is not None  # noqa: S101  # FK
+        if worker.listing_status is not ListingStatus.listed:
+            raise WorkerNotListed()
+        if await self.checks.count_verified_unexpired(worker.id, now) < len(KINDS):
+            raise WorkerNotListed()
+        # A lapsed hold on this worker no longer counts; clear it now rather than wait for the job.
+        for stale in await self.placements.expired_holds(now, worker_id=worker.id):
+            await self._release_hold(stale, None, None, EndReason.payment_expired, now)
+        if await self.placements.active_for_worker(worker.id):
+            raise WorkerUnavailable()
+
+        replaced = await self._replaced_placement(request)
+        fee_waived = replaced is not None and replaced.replacements_used <= self.settings.FREE_REPLACEMENTS
+        placement = await self.placements.add(  # the index backs up the check above
+            Placement(
+                request_id=request.id,
+                proposal_id=proposal.id,
+                worker_id=worker.id,
+                family_id=family_id,
+                agency_id=proposal.agency_id,
+                replacements_used=replaced.replacements_used if replaced else 0,
+                **(
+                    self._trial_fields(request, now)
+                    if fee_waived
+                    else {
+                        "status": PlacementStatus.pending_payment,
+                        "hold_expires_at": now + timedelta(minutes=self.settings.PAYMENT_HOLD_MINUTES),
+                    }
                 ),
             )
-            summary = await self.views.summary(placement)
-        log.info("placement.created", placement_id=str(placement.id), status=placement.status.value)
-        if fee_waived:
-            return Accepted(placement=summary, checkout=None)
-        # Outside the transaction (database.md §7): the hold stands even if the provider is down.
-        checkout = await self.payments.start_placement_checkout(placement.id, user.email)
-        return Accepted(placement=summary, checkout=checkout)
+        )
+        await self.placements.add_event(
+            placement.id, None, placement.status, user.id, FREE_REPLACEMENT_NOTE if fee_waived else None
+        )
+        proposal.status = ProposalStatus.accepted
+        await self.requests.set_proposals(
+            request.id, (ProposalStatus.pending,), ProposalStatus.superseded, except_id=proposal.id
+        )
+        request.status = RequestStatus.matched
+        if replaced is not None:
+            replacement = await self.placements.open_replacement_for(replaced.id)
+            if replacement is not None:
+                replacement.status = ReplacementStatus.fulfilled
+        await self.session.flush()
+        parties = await self.notices.placement_parties(placement.id)
+        await self.notices.add_many(
+            parties.agency_user_ids,
+            messages.proposal_accepted(
+                placement.id, parties.family_name, parties.worker_name, fee_waived=fee_waived
+            ),
+        )
+        return placement
 
     async def start_trial(self, placement_id: uuid.UUID, actor_id: uuid.UUID | None = None) -> Placement:
         """pending_payment → trial once the fee is paid (its own transaction)."""

@@ -42,6 +42,7 @@ export const paymentHandlers = [
     const payer = db.users.find((u) => u.id === payment.payer_user_id);
     return HttpResponse.json({
       reference: payment.reference,
+      kind: payment.kind,
       amount_kobo: payment.amount_kobo,
       email: payer?.email ?? "",
       status: payment.status,
@@ -62,6 +63,24 @@ export const paymentHandlers = [
     const eventId = `charge.success:${payment.reference}`;
     if (db.webhookEvents.includes(eventId)) return HttpResponse.json({ status: payment.status }); // duplicate: no second effect
     db.webhookEvents.push(eventId);
+
+    if (payment.kind === "subscription") {
+      // Paystack's subscription.create / charge.success: the plan starts and renews monthly.
+      payment.status = "success";
+      payment.paid_at = nowIso();
+      const periodEnd = new Date(Date.now() + 30 * DAY).toISOString();
+      const existing = db.subscriptions.find((s) => s.agency_id === payment.agency_id);
+      if (existing) Object.assign(existing, { status: "active", current_period_end: periodEnd });
+      else
+        db.subscriptions.push({
+          agency_id: payment.agency_id!,
+          plan_code: "PLN_agency_monthly",
+          status: "active",
+          current_period_end: periodEnd,
+        });
+      persist();
+      return HttpResponse.json({ status: payment.status });
+    }
 
     applyHoldExpiry();
     const placement = db.placements.find((p) => p.id === payment.placement_id);

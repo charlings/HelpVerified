@@ -28,6 +28,7 @@ from app.modules.agencies.models import Agency
 from app.modules.agencies.service import AgencyService
 from app.modules.auth.google import GoogleFlows
 from app.modules.auth.service import AuthService
+from app.modules.contact.service import ContactService
 from app.modules.families.service import FamilyService
 from app.modules.notifications.repository import PENDING as NOTIFICATIONS_PENDING
 from app.modules.notifications.service import NotificationService
@@ -86,6 +87,15 @@ def get_auth_service(
     session: SessionDep, settings: SettingsDep, email: Annotated[EmailSender, Depends(get_email_sender)]
 ) -> AuthService:
     return AuthService(session, settings, email)
+
+
+def get_contact_service(
+    settings: SettingsDep, email: Annotated[EmailSender, Depends(get_email_sender)]
+) -> ContactService:
+    return ContactService(settings, email)
+
+
+ContactServiceDep = Annotated[ContactService, Depends(get_contact_service)]
 
 
 def get_user_service(session: SessionDep) -> UserService:

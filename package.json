@@ -10,6 +10,7 @@
     "build": "pnpm --filter web build",
     "lint": "pnpm --filter web lint",
     "typecheck": "pnpm --filter web typecheck",
-    "test": "pnpm --filter web test"
+    "test": "pnpm --filter web test",
+    "contracts:generate": "cd apps/api && uv run python -m scripts.export_openapi ../../packages/contracts/openapi.json && cd ../.. && pnpm --filter @helpverified/contracts generate"
   }
 }

@@ -20,6 +20,8 @@ class AgencySummary(BaseModel):
 
 class UserOut(BaseModel):
     model_config = ConfigDict(
+        # `agency` is always sent (null when there is none), so the schema marks it required (B7 contracts).
+        json_schema_serialization_defaults_required=True,
         json_schema_extra={
             "examples": [
                 {
@@ -32,7 +34,7 @@ class UserOut(BaseModel):
                     "agency": None,
                 }
             ]
-        }
+        },
     )
 
     id: uuid.UUID

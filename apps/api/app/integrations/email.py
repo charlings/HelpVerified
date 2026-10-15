@@ -30,6 +30,7 @@ class EmailMessage:
     text: str
     kind: str  # template name, e.g. "verify_email"
     link: str | None = None
+    reply_to: str | None = None  # a validated address (contact form: the sender)
 
 
 class EmailSender(Protocol):
@@ -74,6 +75,8 @@ class SmtpEmailSender:
         mime["From"] = self.sender
         mime["To"] = message.to
         mime["Subject"] = message.subject
+        if message.reply_to:
+            mime["Reply-To"] = message.reply_to
         mime["Message-ID"] = make_msgid(domain=self.sender.rsplit("@", 1)[-1].rstrip(">"))
         mime.set_content(message.text)
         return mime

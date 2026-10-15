@@ -60,7 +60,7 @@ export function FamilySettingsScreen() {
             title="Family"
             rows={[
               ["Family name", profile.data.name],
-              ["Area", `${profile.data.lga}, ${profile.data.state}`],
+              ["Area", [profile.data.lga, profile.data.state].filter(Boolean).join(", ") || "Not set"],
             ]}
           />
         )}

@@ -140,7 +140,7 @@ proposals (
   UNIQUE (request_id, worker_id)
 )
 placements (
-  id uuid PK, request_id uuid FK requests NOT NULL, proposal_id uuid UNIQUE FK proposals NOT NULL,
+  id uuid PK, request_id uuid FK requests NOT NULL, proposal_id uuid FK proposals NOT NULL (indexed, not unique: a released hold's proposal can be accepted again; migration 0007),
   worker_id uuid FK workers NOT NULL, family_id uuid FK families NOT NULL, agency_id uuid FK agencies NOT NULL,
   status placement_status NOT NULL,
   hold_expires_at timestamptz NULL,          -- only for pending_payment
@@ -274,8 +274,13 @@ BEGIN
   UPDATE proposals / requests as in §6
   INSERT placement_events, audit_log
 COMMIT
-then: initialise Paystack transaction (outside the DB transaction), return authorization_url
+then: initialise Paystack transaction (outside the accept transaction), return authorization_url
 ```
+
+Checkout (ADR 0017): its own transaction locks the placement row, reuses an open link or inserts the payment
+row and calls Paystack, then commits both together. Concurrent retries wait and reuse the link; a failure
+rolls back (no payment row) and the hold stands. Accepting the same proposal again while its hold is live
+resumes it.
 
 Webhook `charge.success`: insert `webhook_events` (conflict → already processed, return 200), lock payment by reference, verify amount and status with Paystack API, mark `success`, transition placement `pending_payment → trial`. If the hold already expired and the worker has since been taken, mark the payment for refund and notify; never create a second active placement.
 

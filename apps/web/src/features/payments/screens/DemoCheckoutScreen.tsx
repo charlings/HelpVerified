@@ -11,9 +11,13 @@ import { routes } from "@/config/routes";
 import { ApiError } from "@/lib/api-client";
 import { messageForError } from "@/lib/error-messages";
 import { formatNaira } from "@/lib/format";
-import { paymentsApi } from "../api";
+import { paymentsApi, type DemoTransaction } from "../api";
 
-function callbackUrl(reference: string, cancelled = false) {
+/** Where Paystack sends the payer back: the fee's callback page, or the agency's billing page. */
+function callbackUrl(reference: string, kind: DemoTransaction["kind"], cancelled = false) {
+  if (kind === "subscription") {
+    return cancelled ? routes.agency.billing : `${routes.agency.billing}?reference=${encodeURIComponent(reference)}`;
+  }
   const params = new URLSearchParams({ reference });
   if (cancelled) params.set("cancelled", "1");
   return `${routes.family.paymentCallback}?${params.toString()}`;
@@ -33,7 +37,7 @@ export function DemoCheckoutScreen() {
   });
   const pay = useMutation({
     mutationFn: () => paymentsApi.demoCharge(reference),
-    onSuccess: () => router.push(callbackUrl(reference)),
+    onSuccess: () => router.push(callbackUrl(reference, tx.data?.kind ?? "placement_fee")),
   });
 
   return (
@@ -68,7 +72,9 @@ export function DemoCheckoutScreen() {
           <>
             <dl className="mt-6 grid gap-3">
               <div className="flex justify-between gap-4">
-                <dt>Placement fee (demo amount)</dt>
+                <dt>
+                  {tx.data.kind === "subscription" ? "Agency subscription, monthly" : "Placement fee"} (demo amount)
+                </dt>
                 <dd className="font-display text-2xl font-bold text-navy-900">{formatNaira(tx.data.amount_kobo)}</dd>
               </div>
               <div className="flex justify-between gap-4 text-sm">
@@ -94,13 +100,18 @@ export function DemoCheckoutScreen() {
                   variant="ghost"
                   shape="app"
                   className="w-full"
-                  onClick={() => router.push(callbackUrl(reference, true))}
+                  onClick={() => router.push(callbackUrl(reference, tx.data.kind, true))}
                 >
                   Cancel and go back
                 </Button>
               </div>
             ) : (
-              <Button size="lg" shape="app" className="mt-6 w-full" onClick={() => router.push(callbackUrl(reference))}>
+              <Button
+                size="lg"
+                shape="app"
+                className="mt-6 w-full"
+                onClick={() => router.push(callbackUrl(reference, tx.data.kind))}
+              >
                 Continue
               </Button>
             )}

@@ -1,6 +1,5 @@
-import type { NigerianState } from "@/content/locations";
 import type { WorkerPublic } from "@/features/workers";
-import type { ProposalStatus, RequestStatus, WorkerRole } from "@/types/domain";
+import type { PlacementStatus, ProposalStatus, RequestStatus, WorkerRole } from "@/types/domain";
 
 /**
  * A family's request as an agency sees it. No family name or address before a placement:
@@ -13,7 +12,8 @@ export type AgencyRequest = {
   description: string;
   schedule: "full_time" | "part_time";
   live_in: boolean;
-  state: NigerianState;
+  /** Validated against the list of states when written; responses carry it as plain text. */
+  state: string;
   lga: string;
   budget_min_kobo: number | null;
   budget_max_kobo: number | null;
@@ -44,7 +44,8 @@ export type FamilyProposal = {
 };
 
 export type AcceptResult = {
-  placement: { id: string; status: "pending_payment" | "trial" };
+  /** `pending_payment` when a fee is due, `trial` when it isn't. */
+  placement: { id: string; status: PlacementStatus };
   /** Null when no fee is due (a replacement covered by the free allowance). */
   payment: { authorization_url: string; reference: string } | null;
 };

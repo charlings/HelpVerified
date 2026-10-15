@@ -1,5 +1,6 @@
 """Test doubles for integrations."""
 
+import asyncio
 import base64
 import hashlib
 import uuid
@@ -9,7 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 
-from app.core.errors import PaymentProviderError
+from app.core.errors import PaymentProviderRejected, PaymentProviderUnavailable
 from app.integrations.cloudinary import Asset, SignedUpload, sign
 from app.integrations.email import EmailMessage
 from app.integrations.firestore import MirroredNotification, MirrorError
@@ -107,8 +108,11 @@ class FakePaystack:
         self.transactions: dict[str, dict[str, Any]] = {}
         self.refunds: list[str] = []
         self.subscriptions: dict[str, RemoteSubscription] = {}
-        self.down = False
+        self.down = False  # True: every call fails as unreachable
         self.refuse_refunds = False  # only refunds fail (verify still works)
+        self.reject_checkouts = False  # True: initialize is refused, as for an email Paystack won't take
+        self.initialize_delay = 0.0  # seconds: keeps a checkout in flight for the concurrency tests
+        self.initialize_calls = 0
 
     def reset(self) -> None:
         self.transactions.clear()
@@ -116,10 +120,13 @@ class FakePaystack:
         self.subscriptions.clear()
         self.down = False
         self.refuse_refunds = False
+        self.reject_checkouts = False
+        self.initialize_delay = 0.0
+        self.initialize_calls = 0
 
     def _check(self) -> None:
         if self.down:
-            raise PaymentProviderError()
+            raise PaymentProviderUnavailable()
 
     async def initialize(
         self,
@@ -130,9 +137,14 @@ class FakePaystack:
         metadata: dict[str, Any],
         plan: str | None = None,
     ) -> Initialized:
+        self.initialize_calls += 1
+        if self.initialize_delay:
+            await asyncio.sleep(self.initialize_delay)
         self._check()
+        if self.reject_checkouts:
+            raise PaymentProviderRejected()
         if reference in self.transactions:
-            raise PaymentProviderError()  # Paystack refuses a duplicate reference
+            raise PaymentProviderRejected()  # Paystack refuses a duplicate reference
         self.transactions[reference] = {
             "email": email,
             "amount": amount_kobo,
@@ -156,13 +168,13 @@ class FakePaystack:
         self._check()
         txn = self.transactions.get(reference)
         if txn is None:
-            raise PaymentProviderError()
+            raise PaymentProviderRejected()  # "Transaction reference not found"
         return Verified(reference, txn["status"], txn["amount"], txn["currency"], txn["paid_at"])
 
     async def refund(self, reference: str) -> None:
         self._check()
         if self.refuse_refunds:
-            raise PaymentProviderError()
+            raise PaymentProviderRejected()
         self.refunds.append(reference)
 
     async def fetch_subscription(self, code: str) -> RemoteSubscription:

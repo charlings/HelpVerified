@@ -1,13 +1,17 @@
 """Paystack signing, key safety, scrubbing, and the callback pages existing in the web app."""
 
+import asyncio
 import hashlib
 import hmac
+from collections.abc import Callable
 from pathlib import Path
 
+import httpx
 import pytest
 
 from app.core.config import MissingSettingsError, load_settings
-from app.integrations.paystack import valid_signature
+from app.core.errors import PaymentProviderRejected, PaymentProviderUnavailable
+from app.integrations.paystack import PaystackClient, valid_signature
 from app.modules.payments.service import BILLING_CALLBACK_PATH, PLACEMENT_CALLBACK_PATH, new_reference, scrub
 
 WEB_ROUTES = Path(__file__).parents[4] / "apps/web/src/config/routes.ts"
@@ -46,6 +50,86 @@ def test_live_keys_only_in_production(
         with pytest.raises(MissingSettingsError) as raised:
             load_settings()
         assert key not in str(raised.value)  # the key itself is never echoed
+
+
+SECRET = "sk_test_unit_secret_0123456789"
+CHECKOUT = {
+    "email": "family@demo.hv",
+    "amount_kobo": 2_000_000,
+    "reference": "HV-PF-UNIT",
+    "callback_url": "http://localhost:3000/family/payments/callback",
+    "metadata": {},
+}
+
+
+def _client(handler: Callable[[httpx.Request], httpx.Response]) -> PaystackClient:
+    return PaystackClient(SECRET, base_url="https://paystack.test", transport=httpx.MockTransport(handler))
+
+
+def _raise(exc: Exception) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise exc
+
+    return handler
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        _raise(httpx.ConnectError("connection refused")),
+        _raise(httpx.ReadTimeout("timed out")),
+        lambda _: httpx.Response(503, text="<html>Service Unavailable</html>"),
+        lambda _: httpx.Response(200, text="not json"),
+    ],
+    ids=["connect-error", "timeout", "5xx", "unreadable-body"],
+)
+def test_an_unreachable_or_failing_provider_is_unavailable(
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> None:
+    with pytest.raises(PaymentProviderUnavailable) as raised:
+        asyncio.run(_client(handler).initialize(**CHECKOUT))
+
+    error = raised.value
+    assert (error.code, error.status) == ("PAYMENT_PROVIDER_ERROR", 502)
+    assert error.details == {"reason": "unavailable"}
+    assert "could not be reached" in error.message
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(400, json={"status": False, "message": '"email" must be a valid email'}),
+        httpx.Response(401, json={"status": False, "message": "Invalid key"}),
+        httpx.Response(200, json={"status": False, "message": "Duplicate Transaction Reference"}),
+    ],
+    ids=["400-bad-email", "401-bad-key", "status-false"],
+)
+def test_a_refusal_is_rejected_without_paystacks_words(response: httpx.Response) -> None:
+    with pytest.raises(PaymentProviderRejected) as raised:
+        asyncio.run(_client(lambda _: response).initialize(**CHECKOUT))
+
+    error = raised.value
+    assert (error.code, error.status) == ("PAYMENT_PROVIDER_ERROR", 502)
+    assert error.details == {"reason": "rejected"}
+    assert error.message == "The payment provider declined this payment request."
+    shown = f"{error.message} {error.details}"
+    for private in (response.json()["message"], SECRET, "family@demo.hv"):
+        assert private not in shown
+
+
+def test_a_success_returns_the_checkout() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == f"Bearer {SECRET}"
+        data = {
+            "authorization_url": "https://checkout.paystack.test/x",
+            "access_code": "ac",
+            "reference": "R",
+        }
+        return httpx.Response(200, json={"status": True, "data": data})
+
+    initialized = asyncio.run(_client(handler).initialize(**CHECKOUT))
+
+    assert initialized.authorization_url == "https://checkout.paystack.test/x"
 
 
 def test_scrub_drops_card_authorization() -> None:

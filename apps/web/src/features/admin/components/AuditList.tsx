@@ -5,13 +5,14 @@ import { auditAction } from "../status";
 import type { AuditEntry } from "../types";
 
 export function auditEntityHref(entry: AuditEntry): string | null {
+  const id = entry.entity_id;
   switch (entry.entity) {
     case "agency":
-      return routes.admin.agency(entry.entity_id);
+      return id ? routes.admin.agency(id) : null;
     case "worker":
-      return routes.admin.worker(entry.entity_id);
+      return id ? routes.admin.worker(id) : null;
     case "placement":
-      return routes.admin.placement(entry.entity_id);
+      return id ? routes.admin.placement(id) : null;
     case "document":
       return entry.worker_id ? routes.admin.worker(entry.worker_id) : null;
   }

@@ -12,14 +12,15 @@ export type AuditAction =
   | "agency.reinstated"
   | "worker.check_flagged"
   | "document.viewed"
-  | "placement.ended";
+  | "placement.ended"
+  | "worker.evidence_deleted";
 
 export type AuditEntry = {
   id: string;
   action: AuditAction;
   actor: { id: string; name: string; role: Role } | null;
   entity: "agency" | "worker" | "placement" | "document";
-  entity_id: string;
+  entity_id: string | null;
   entity_label: string;
   worker_id: string | null;
   reason: string | null;
@@ -45,7 +46,7 @@ export type AdminAgency = AdminAgencySummary & {
   approved_at: string | null;
   status_reason: string | null;
   admin: { full_name: string; email: string } | null;
-  subscription: { status: SubscriptionStatus; current_period_end: string } | null;
+  subscription: { status: SubscriptionStatus; current_period_end: string | null } | null;
   workers: { total: number; draft: number; listed: number; delisted: number; suspended: number };
   active_placements: number;
   history: AuditEntry[];

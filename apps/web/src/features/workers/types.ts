@@ -1,4 +1,3 @@
-import type { NigerianState } from "@/content/locations";
 import type {
   ActivePlacementStatus,
   ListingStatus,
@@ -22,7 +21,8 @@ export type Worker = {
   years_experience: number;
   languages: string[];
   live_in_ok: boolean;
-  state: NigerianState;
+  /** Validated against the list of states when written; responses carry it as plain text. */
+  state: string;
   lga: string;
   expected_salary_min_kobo: number | null;
   expected_salary_max_kobo: number | null;

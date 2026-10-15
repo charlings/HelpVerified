@@ -25,12 +25,13 @@ from app.core.errors import (
     IllegalTransition,
     NotFound,
     PaymentProviderError,
+    PaymentProviderUnavailable,
     Unauthenticated,
 )
 from app.core.logging import get_logger
 from app.core.pagination import PageParams
 from app.integrations.payments import Checkout
-from app.integrations.paystack import PaystackApi, valid_signature
+from app.integrations.paystack import Initialized, PaystackApi, valid_signature
 from app.modules.agencies.models import Agency, AgencyStatus, Subscription, SubscriptionStatus
 from app.modules.agencies.repository import AgencyRepository
 from app.modules.families.repository import FamilyRepository
@@ -102,19 +103,26 @@ class PaymentService:
     # Placement fee (PlacementService.accept calls this as its PaymentGateway)
 
     async def start_placement_checkout(self, placement_id: uuid.UUID, payer_email: str) -> Checkout:
-        """Creates the fee's payment row and Paystack checkout, or returns the one already open."""
+        """Returns the hold's open checkout, or opens one (ADR 0017).
+
+        One attempt at a time per placement: the placement row stays locked while Paystack is asked, so a
+        concurrent retry waits and then reuses the link instead of opening a second transaction. The new
+        payment row and its link commit together, so a failed attempt rolls back and leaves nothing behind;
+        the next attempt uses a fresh reference. The lock never blocks the expire_holds job (SKIP LOCKED)."""
         async with self.session.begin():
-            placement = await self.placements.get(placement_id)
+            placement = await self.placements.get(placement_id, for_update=True)
             if placement is None:
                 raise NotFound()
-            family = await self.families.get(placement.family_id)
-            assert family is not None  # noqa: S101  # FK
+            if placement.status is not PlacementStatus.pending_payment:
+                raise IllegalTransition("Nothing to pay.")
             payment = await self.payments.pending_fee(placement_id, for_update=True)
             if payment is not None and payment.authorization_url:
                 return Checkout(payment.authorization_url, payment.paystack_reference)
-            if payment is not None:  # an earlier attempt never reached Paystack: start afresh
+            if payment is not None:  # left by an attempt before ADR 0017; it never reached Paystack
                 payment.status = PaymentStatus.failed
                 await self.session.flush()
+            family = await self.families.get(placement.family_id)
+            assert family is not None  # noqa: S101  # FK
             payment = await self.payments.add(
                 Payment(
                     kind=PaymentKind.placement_fee,
@@ -124,12 +132,14 @@ class PaymentService:
                     paystack_reference=new_reference("PF"),
                 )
             )
-        return await self._open_checkout(
-            payment,
-            payer_email,
-            PLACEMENT_CALLBACK_PATH,
-            {"kind": "placement_fee", "placement_id": str(placement_id)},
-        )
+            initialized = await self._initialize(
+                payment,
+                payer_email,
+                PLACEMENT_CALLBACK_PATH,
+                {"kind": "placement_fee", "placement_id": str(placement_id)},
+            )
+            payment.authorization_url = initialized.authorization_url
+        return Checkout(initialized.authorization_url, payment.paystack_reference)
 
     async def resume_checkout(self, user: User, placement_id: uuid.UUID) -> Checkout:
         """POST /placements/{id}/pay: the same checkout again, never a second charge."""
@@ -146,7 +156,7 @@ class PaymentService:
 
     async def start_subscription(self, user: User, agency: Agency) -> Checkout:
         if not self.settings.PAYSTACK_AGENCY_PLAN_CODE:
-            raise PaymentProviderError("Subscriptions aren't set up yet.")
+            raise PaymentProviderUnavailable("Subscriptions aren't set up yet.")
         async with self.session.begin():
             current = await self.agencies.get(agency.id)
             if current is None or current.status is not AgencyStatus.approved:
@@ -446,7 +456,22 @@ class PaymentService:
         plan: str | None = None,
     ) -> Checkout:
         """Initialises the Paystack transaction (outside any transaction) and remembers its link."""
-        initialized = await self.paystack.initialize(
+        initialized = await self._initialize(payment, email, callback_path, metadata, plan)
+        async with self.session.begin():
+            stored = await self.payments.get(payment.id, for_update=True)
+            assert stored is not None  # noqa: S101
+            stored.authorization_url = initialized.authorization_url
+        return Checkout(initialized.authorization_url, payment.paystack_reference)
+
+    async def _initialize(
+        self,
+        payment: Payment,
+        email: str,
+        callback_path: str,
+        metadata: dict[str, Any],
+        plan: str | None = None,
+    ) -> Initialized:
+        return await self.paystack.initialize(
             email=email,
             amount_kobo=payment.amount_kobo,
             reference=payment.paystack_reference,
@@ -454,11 +479,6 @@ class PaymentService:
             metadata=metadata | {"payment_id": str(payment.id)},
             plan=plan,
         )
-        async with self.session.begin():
-            stored = await self.payments.get(payment.id, for_update=True)
-            assert stored is not None  # noqa: S101
-            stored.authorization_url = initialized.authorization_url
-        return Checkout(initialized.authorization_url, payment.paystack_reference)
 
     def _placements(self) -> PlacementService:
         return PlacementService(self.session, self.settings, self)

@@ -78,7 +78,8 @@ class Placement(Timestamps, Base):
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     request_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("requests.id"), index=True)
-    proposal_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("proposals.id"), unique=True)
+    # Not unique: a released hold's proposal can be accepted again (migration 0007, ADR 0017).
+    proposal_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("proposals.id"), index=True)
     worker_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workers.id"), index=True)
     family_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("families.id"), index=True)
     agency_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agencies.id"), index=True)

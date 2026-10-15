@@ -75,4 +75,5 @@ export const auditAction: Record<AuditAction, string> = {
   "worker.check_flagged": "Flagged a check",
   "document.viewed": "Viewed a document",
   "placement.ended": "Ended placement",
+  "worker.evidence_deleted": "Deleted old evidence",
 };

@@ -23,6 +23,8 @@ import type {
 export const DEMO_PASSWORD = "demo1234";
 // TODO(content): demo amount only — the real placement fee is an open owner decision.
 export const DEMO_PLACEMENT_FEE_KOBO = 20_000 * 100;
+// TODO(content): demo amount only — the real subscription price is an open owner decision.
+export const DEMO_SUBSCRIPTION_KOBO = 25_000 * 100;
 const DAY = 24 * 60 * 60 * 1000;
 const naira = (n: number) => n * 100;
 
@@ -469,8 +471,6 @@ export function seedData(now = Date.now()) {
     }),
   ].sort((a, b) => b.created_at.localeCompare(a.created_at));
 
-  // TODO(content): demo amounts only — real prices are still to be confirmed by the owner.
-  const DEMO_SUBSCRIPTION = naira(25_000);
   const fee = (id: string, placement_id: string, payer: string, daysAgo: number, status: "success" | "pending") => ({
     id,
     kind: "placement_fee" as const,
@@ -489,7 +489,7 @@ export function seedData(now = Date.now()) {
     payer_user_id: "u-agency",
     placement_id: null,
     agency_id: "a-sunrise",
-    amount_kobo: DEMO_SUBSCRIPTION,
+    amount_kobo: DEMO_SUBSCRIPTION_KOBO,
     reference: `HV-SUB-SUNRISE-${i + 1}`,
     status: "success" as const,
     paid_at: iso(offset),

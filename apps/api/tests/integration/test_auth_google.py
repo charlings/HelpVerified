@@ -20,7 +20,8 @@ def query(url: str) -> dict[str, str]:
 
 def start(api: TestClient, next_path: str | None = None) -> httpx.Response:
     params = {"next": next_path} if next_path else None
-    return api.get(f"{API}/auth/google/start", params=params, follow_redirects=False)
+    response: httpx.Response = api.get(f"{API}/auth/google/start", params=params, follow_redirects=False)
+    return response
 
 
 def sign_in_with_google(
@@ -31,11 +32,12 @@ def sign_in_with_google(
     assert started.status_code == 303, started.text
     authorization_url = started.headers["location"]
     code = google.consent(authorization_url, identity)
-    return api.get(
+    response: httpx.Response = api.get(
         f"{API}/auth/google/callback",
         params={"code": code, "state": query(authorization_url)["state"]},
         follow_redirects=False,
     )
+    return response
 
 
 def lands_on(response: httpx.Response, path: str) -> dict[str, str]:
@@ -59,7 +61,8 @@ def refreshed_token(api: TestClient) -> str:
 
 def complete(api: TestClient, role: str = "family", **overrides: str) -> httpx.Response:
     body = {"full_name": "Ada Okafor", "role": role, "privacy_notice_version": "2026-10-05"} | overrides
-    return api.post(f"{API}/auth/google/complete", json=body, headers=WEB_ORIGIN)
+    response: httpx.Response = api.post(f"{API}/auth/google/complete", json=body, headers=WEB_ORIGIN)
+    return response
 
 
 # Start

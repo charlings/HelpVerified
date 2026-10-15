@@ -2,7 +2,8 @@ import type { FamilyRequest } from "@/features/requests";
 import type { PlacementSummary } from "@/features/placements";
 import { api } from "@/lib/api-client";
 
-export type FamilyProfile = { id: string; name: string; state: string; lga: string };
+/** The area comes from the family's first request; the API types it as nullable. */
+export type FamilyProfile = { id: string; name: string; state: string | null; lga: string | null };
 
 export type FamilyDashboard = {
   active_placements: PlacementSummary[];

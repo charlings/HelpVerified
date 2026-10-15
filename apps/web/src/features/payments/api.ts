@@ -10,7 +10,13 @@ export type PaymentVerification = {
 };
 
 /** Demo mode only: what the stand-in checkout shows. */
-export type DemoTransaction = { reference: string; amount_kobo: number; email: string; status: PaymentStatus };
+export type DemoTransaction = {
+  reference: string;
+  kind: "placement_fee" | "subscription";
+  amount_kobo: number;
+  email: string;
+  status: PaymentStatus;
+};
 
 export const paymentsApi = {
   /** Called on the Paystack callback page; the API re-verifies with Paystack before reporting success. */

@@ -4,7 +4,7 @@ import type { AgencyStatus, SubscriptionStatus } from "@/types/domain";
 export type AgencyDashboard = {
   /** `status_reason`: why the agency was rejected or suspended. */
   agency: { id: string; name: string; status: AgencyStatus; status_reason: string | null };
-  subscription: { status: SubscriptionStatus; current_period_end: string } | null;
+  subscription: { status: SubscriptionStatus; current_period_end: string | null } | null;
   /** Approved and subscribed: may list workers and propose. */
   active: boolean;
   workers: { total: number; draft: number; listed: number; delisted: number; suspended: number };

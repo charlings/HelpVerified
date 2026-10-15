@@ -1,9 +1,11 @@
 import { http, HttpResponse } from "msw";
 import { env } from "@/config/env";
-import { db } from "../db";
-import { agencyOf, paginate, requireAgency, subscriptionOf } from "../domain";
+import { routes } from "@/config/routes";
+import { db, persist } from "../db";
+import { agencyOf, nowIso, paginate, requireAgency, subscriptionOf } from "../domain";
 import { errorResponse, forcedError } from "../errors";
 import { mockLatency } from "../latency";
+import { DEMO_SUBSCRIPTION_KOBO } from "../seed";
 import { authenticate } from "./auth";
 
 const base = env.NEXT_PUBLIC_API_BASE_URL;
@@ -26,6 +28,38 @@ export const billingHandlers = [
           }
         : null,
     );
+  }),
+
+  // Mirrors PaymentService.start_subscription: approved agencies only, not while one is active.
+  http.post(`${base}/billing/subscription`, async ({ request }) => {
+    await mockLatency();
+    const forced = forcedError(request);
+    if (forced) return forced;
+    const user = authenticate(request);
+    const ctx = requireAgency(user);
+    if ("error" in ctx) return ctx.error;
+    if (ctx.agency.status !== "approved") {
+      return errorResponse("AGENCY_NOT_ACTIVE", "Your agency must be approved before it can subscribe.");
+    }
+    if (subscriptionOf(ctx.agency.id)?.status === "active") {
+      return errorResponse("ILLEGAL_TRANSITION", "Your subscription is already active.");
+    }
+    const reference = `HV-SUB-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    db.payments.push({
+      id: `pay-${crypto.randomUUID()}`,
+      kind: "subscription",
+      payer_user_id: user!.id,
+      placement_id: null,
+      agency_id: ctx.agency.id,
+      amount_kobo: DEMO_SUBSCRIPTION_KOBO,
+      reference,
+      status: "pending",
+      paid_at: null,
+      created_at: nowIso(),
+    });
+    persist();
+    // Real API: Paystack's hosted checkout URL. Demo: the in-app stand-in.
+    return HttpResponse.json({ authorization_url: `${routes.demoCheckout}?reference=${reference}`, reference });
   }),
 
   http.get(`${base}/payments`, async ({ request }) => {

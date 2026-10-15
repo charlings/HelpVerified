@@ -13,7 +13,7 @@ from typing import Any, Protocol
 
 import httpx
 
-from app.core.errors import PaymentProviderError
+from app.core.errors import PaymentProviderRejected, PaymentProviderUnavailable
 from app.core.logging import get_logger
 
 API_BASE = "https://api.paystack.co"
@@ -76,26 +76,39 @@ def _datetime(value: Any) -> datetime | None:
 
 
 class PaystackClient:
-    def __init__(self, secret_key: str, timeout: float = 15.0, base_url: str = API_BASE) -> None:
+    def __init__(
+        self,
+        secret_key: str,
+        timeout: float = 15.0,
+        base_url: str = API_BASE,
+        transport: httpx.AsyncBaseTransport | None = None,  # tests pass an httpx.MockTransport
+    ) -> None:
         self._headers = {"Authorization": f"Bearer {secret_key}"}
         self._timeout = timeout
         self._base = base_url
+        self._transport = transport
 
     async def _call(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+        """Unreachable, timed out, a 5xx or an unreadable body → PaymentProviderUnavailable (worth retrying).
+        Paystack answering 4xx or `status: false` → PaymentProviderRejected. Neither carries Paystack's
+        words to the client: its short message goes to the log only."""
         operation = path.split("/")[1]  # "transaction", "refund", "subscription": no references in logs
         try:
             async with httpx.AsyncClient(
-                base_url=self._base, headers=self._headers, timeout=self._timeout
+                base_url=self._base, headers=self._headers, timeout=self._timeout, transport=self._transport
             ) as client:
                 response = await client.request(method, path, **kwargs)
         except httpx.HTTPError as exc:
             log.warning("paystack.unreachable", operation=operation, error=type(exc).__name__)
-            raise PaymentProviderError() from exc
+            raise PaymentProviderUnavailable() from exc
+        if response.status_code >= 500:
+            log.warning("paystack.server_error", operation=operation, status=response.status_code)
+            raise PaymentProviderUnavailable()
         try:
             body: dict[str, Any] = response.json()
         except ValueError as exc:
             log.warning("paystack.bad_response", operation=operation, status=response.status_code)
-            raise PaymentProviderError() from exc
+            raise PaymentProviderUnavailable() from exc
         if response.status_code >= 400 or not body.get("status"):
             # Paystack's short message ("Invalid key", "Duplicate Transaction Reference") is safe to log;
             # the body isn't, as it can hold customer details.
@@ -105,7 +118,7 @@ class PaystackClient:
                 status=response.status_code,
                 message=body.get("message"),
             )
-            raise PaymentProviderError()
+            raise PaymentProviderRejected()
         data: dict[str, Any] = body.get("data") or {}
         return data
 

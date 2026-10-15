@@ -30,6 +30,7 @@ from app.modules.admin.router import router as admin_router
 from app.modules.agencies.router import router as agencies_router
 from app.modules.auth.google import GoogleFlows
 from app.modules.auth.router import router as auth_router
+from app.modules.contact.router import router as contact_router
 from app.modules.families.router import router as families_router
 from app.modules.notifications.dispatcher import NotificationDispatcher
 from app.modules.notifications.router import router as notifications_router
@@ -147,6 +148,7 @@ def create_app(
         payments_router,
         notifications_router,
         admin_router,
+        contact_router,
     ):
         app.include_router(router, prefix=API_PREFIX)
     return app

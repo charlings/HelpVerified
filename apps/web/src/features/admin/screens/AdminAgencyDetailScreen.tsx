@@ -138,7 +138,7 @@ export function AdminAgencyDetailScreen({ agencyId }: { agencyId: string }) {
               [
                 "Subscription",
                 a.subscription
-                  ? `${a.subscription.status === "active" ? "Active" : `Not active (${a.subscription.status.replace("_", " ")})`}, period ends ${formatDate(a.subscription.current_period_end.slice(0, 10))}`
+                  ? `${a.subscription.status === "active" ? "Active" : `Not active (${a.subscription.status.replace("_", " ")})`}${a.subscription.current_period_end ? `, period ends ${formatDate(a.subscription.current_period_end.slice(0, 10))}` : ""}`
                   : "None",
               ],
             ]}

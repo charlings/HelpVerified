@@ -2,12 +2,12 @@
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, Field, StringConstraints
 
 from app.core.validation import Reason
-from app.modules.admin.models import AuditLog
+from app.modules.admin.models import AuditAction, AuditLog
 from app.modules.agencies.models import Agency
 from app.modules.agencies.schemas import AgencyStatusName, RoleName, SubscriptionOut, WorkerCounts
 from app.modules.users.models import User
@@ -15,6 +15,7 @@ from app.modules.verification.schemas import ItemOut, KindName
 from app.modules.workers.schemas import AdminWorkerOut
 
 AgencyAction = Literal["approve", "reject", "suspend", "reinstate"]
+AuditEntity = Literal["agency", "worker", "placement", "document"]
 
 
 class Actor(BaseModel):
@@ -25,9 +26,9 @@ class Actor(BaseModel):
 
 class AuditEntry(BaseModel):
     id: str
-    action: str
+    action: AuditAction
     actor: Actor | None
-    entity: str
+    entity: AuditEntity
     entity_id: uuid.UUID | None
     entity_label: str
     worker_id: uuid.UUID | None
@@ -39,9 +40,9 @@ class AuditEntry(BaseModel):
         data: dict[str, Any] = entry.data or {}
         return cls(
             id=str(entry.id),
-            action=entry.action,
+            action=AuditAction(entry.action),
             actor=Actor(id=actor.id, name=actor.full_name, role=actor.role.value) if actor else None,
-            entity=entry.entity,
+            entity=cast(AuditEntity, entry.entity),
             entity_id=entry.entity_id,
             entity_label=str(data.get("label", "")),
             worker_id=data.get("worker_id"),

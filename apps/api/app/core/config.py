@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_PER_MIN: int = Field(default=5, gt=0)
     RATE_LIMIT_EMAIL_PER_HOUR: int = Field(default=3, gt=0)
     RATE_LIMIT_USER_PER_MIN: int = Field(default=120, gt=0)
+    RATE_LIMIT_CONTACT_PER_HOUR: int = Field(default=5, gt=0)  # per IP: the public contact form (B7)
 
     # Workers and verification (B3)
     NIN_PEPPER: SecretStr = Field(min_length=32)  # HMAC key for NINs; long-lived (rotation needs a rehash)
@@ -84,6 +85,8 @@ class Settings(BaseSettings):
     SMTP_PORT: int = Field(default=587, gt=0)  # STARTTLS; 465 means TLS from the first byte
     SMTP_USERNAME: str | None = None
     SMTP_PASSWORD: SecretStr | None = None
+    # Where contact-form messages go (B7). Required when deployed; locally they land in the outbox.
+    CONTACT_INBOX: str | None = None
 
     # Notifications (B6). The feed lives in PostgreSQL; "firestore" also mirrors it for the web app's live
     # feed. FIREBASE_CREDENTIALS_FILE is a service-account JSON kept outside the repository.
@@ -103,6 +106,10 @@ class Settings(BaseSettings):
     RETENTION_REJECTED_EVIDENCE_DAYS: int = Field(default=90, gt=0)
     RETENTION_IDLE_WORKER_MONTHS: int = Field(default=12, gt=0)  # owner, 2026-10-13 (ADR 0015 item 9)
 
+    # Demo seed (B7, `python -m app.scripts.seed`; development and test only). Never committed.
+    SEED_DEMO_PASSWORD: SecretStr | None = None  # every demo account
+    SEED_ADMIN_PASSWORD: SecretStr | None = None  # the super admin; falls back to SEED_DEMO_PASSWORD
+
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     MAX_BODY_BYTES: int = Field(default=1_048_576, gt=0)
 
@@ -117,6 +124,8 @@ class Settings(BaseSettings):
     def _no_outbox_in_deployed_envs(self) -> Settings:
         if self.EMAIL_PROVIDER == "outbox" and self.is_deployed:
             raise ValueError("EMAIL_PROVIDER=outbox is for development only; set EMAIL_PROVIDER=smtp")
+        if self.is_deployed and not self.CONTACT_INBOX:
+            raise ValueError("Set CONTACT_INBOX: contact-form messages are emailed there")
         return self
 
     @model_validator(mode="after")
@@ -156,6 +165,14 @@ class Settings(BaseSettings):
     def is_deployed(self) -> bool:
         """Staging and production: real email, Secure cookies."""
         return self.APP_ENV in ("staging", "production")
+
+    @property
+    def contact_inbox(self) -> str | None:
+        """CONTACT_INBOX. Unset with the outbox: a placeholder (the outbox delivers nowhere). Unset with SMTP
+        (development only; deployed envs require it): None, and contact messages aren't emailed."""
+        if self.CONTACT_INBOX:
+            return self.CONTACT_INBOX
+        return "contact@helpverified.local" if self.EMAIL_PROVIDER == "outbox" else None
 
     @property
     def google_enabled(self) -> bool:

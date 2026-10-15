@@ -116,11 +116,32 @@ class RateLimited(DomainError):
 
 
 class PaymentProviderError(DomainError):
+    """A Paystack failure. Raise one of the two subclasses so the client can tell them apart through
+    `details.reason`; both keep the contract's code and status (api-contracts.md §2)."""
+
     code, status, default_message = (
         "PAYMENT_PROVIDER_ERROR",
         502,
-        "The payment provider could not be reached.",
+        "The payment provider couldn't process this request.",
     )
+    reason: ClassVar[str | None] = None
+
+    def __init__(self, message: str | None = None, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message, ({"reason": self.reason} if self.reason else {}) | (details or {}))
+
+
+class PaymentProviderUnavailable(PaymentProviderError):
+    """Paystack couldn't be reached, timed out or failed on its side: retrying later may work."""
+
+    default_message = "The payment provider could not be reached. Please try again shortly."
+    reason = "unavailable"
+
+
+class PaymentProviderRejected(PaymentProviderError):
+    """Paystack answered and refused the request: retrying the same request won't help."""
+
+    default_message = "The payment provider declined this payment request."
+    reason = "rejected"
 
 
 class InternalError(DomainError):
