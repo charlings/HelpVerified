@@ -70,6 +70,7 @@ per email.
    `pending_payment` (logged as `placement.created`) and the request is `matched`. Retrying returns
    `409 REQUEST_NOT_OPEN`, even with the same `Idempotency-Key`. The family can still pay through
    `POST /placements/{id}/pay` or let the hold expire, but the UI needs to handle this.
+   **Addressed in the working tree (ADR 0017, Proposed, uncommitted):** a retried accept with the same `Idempotency-Key` now resumes the checkout (replay rule), or returns `CHECKOUT_IN_PROGRESS` while another call is opening it, or `HOLD_EXPIRED` once the hold has lapsed.
 4. **A pending agency can add workers.** WK7 returned `201`. Listing still requires an approved, subscribed
    agency (`403 AGENCY_NOT_ACTIVE`), so rule 1 holds, but check this is intended.
 
@@ -240,7 +241,7 @@ Reasons must be at least 5 characters (422 otherwise).
 | --- | --- | --- | --- | --- |
 | PY4 | Ada | `GET /payments` | | 200, Ada's placement fees |
 | PY5 | Sunrise | `GET /payments` | | 200, subscription payments |
-| PY6 | Ada | `GET /payments/HV-SEED-PF-BLESSING/verify` | | 200 |
+| PY6 | Ada | `GET /payments/HV-SEED-PF-BLESSING/verify` | | 200, `status: success`, `refund_status: none` |
 | PY7 | Bola | same | | 404 (only the payer) |
 | BI1 | Sunrise | `GET /billing/subscription` | | 200 |
 | BI2 | Ada | `GET /billing/subscription` | | 403 `FORBIDDEN` |
@@ -284,6 +285,10 @@ Reasons must be at least 5 characters (422 otherwise).
 | AD18 | Admin | `GET /admin/audit-log` | | 200, newest first (includes AD5–AD16) |
 | AD19 | Admin | `GET /admin/audit-log` | `action=agency_approved` | 200 |
 | AD20 | Sunrise | `GET /admin/workers` | | 403 `FORBIDDEN` |
+| AD21 | Admin | `GET /admin/alerts` | `state=open` | 200 (empty on a fresh seed); `GET /admin/overview` shows `open_alerts` |
+| AD22 | Ada | `GET /admin/alerts` | | 403 `FORBIDDEN` |
+| AD23 | Admin | `POST /admin/alerts/{unknown id}/resolve` | `{"note":"Checked."}` | 404 |
+| AD24 | Admin | `POST /admin/alerts/{id}/resolve` | `{"note":""}` | 422 (note required). Alerts only exist after a payment problem, so AD24 needs a test-mode late payment first |
 
 ## Not testable from Swagger
 

@@ -36,6 +36,9 @@ Contents: 1. Conventions · 2. Error codes · 3. Endpoints · 4. Key payloads ·
 | 409 | `EMAIL_TAKEN` | Signup with existing email |
 | 409 | `AGENCY_EXISTS` | `POST /agencies` when the caller already has an agency |
 | 409 | `ALREADY_PROPOSED` | The same worker is already proposed for this request (`UNIQUE (request_id, worker_id)`); a withdrawn proposal can be re-proposed |
+| 409 | `HOLD_EXPIRED` | Paying, or replaying an accept, after the 30-minute hold ended (ADR 0017 OD2); `details.placement_id` |
+| 409 | `CHECKOUT_IN_PROGRESS` | Another request is opening this placement's checkout right now; retry shortly (ADR 0017 X3) |
+| 409 | `CHECKOUT_ATTEMPTS_EXHAUSTED` | The placement has used its checkout attempts (3, provisional; ADR 0017 X2) |
 | 410 | `TOKEN_EXPIRED` | Reset / verify token expired or used |
 | 422 | `VALIDATION_ERROR` | Schema validation; `details.fields: {field: [messages]}` |
 | 429 | `RATE_LIMITED` | Too many requests |
@@ -122,8 +125,10 @@ The web app maps each code to a user-facing message in `apps/web/src/lib/error-m
 | GET | `/billing/subscription` | agency_admin |
 | POST | `/webhooks/paystack` | Paystack only (signature) |
 
+Payment `status` on the wire: `pending | success | failed | refund_pending | refunded`. `refund_pending` means a refund is under way; `refunded` only once Paystack reports the refund `processed`. A separate `refund_status` (`none | in_progress | needs_attention | completed`) is on `GET /payments` items and on verify (ADR 0017 X1, OD6). Internal attempt states (`initiating`, `open`, `unknown`, `rejected`, `orphaned`, `closed`, `succeeded`, `refund_due`) never reach the wire; `initiating` and `rejected` attempts are hidden from `GET /payments`.
+
 ### Admin and misc
-`GET /admin/overview`, `GET /admin/placements`, `GET /admin/audit-log`, `POST /admin/users/{id}/suspend`, `POST /contact` (public, rate-limited), `GET /health`.
+`GET /admin/overview` (includes `open_alerts`), `GET /admin/alerts?state=open|resolved|all`, `POST /admin/alerts/{id}/acknowledge`, `POST /admin/alerts/{id}/resolve` (`{note, paystack_refund_id?}`; a named refund is confirmed with Paystack and tracked to `processed`), `GET /admin/placements`, `GET /admin/audit-log`, `POST /admin/users/{id}/suspend`, `POST /contact` (public, rate-limited), `GET /health`.
 
 ### Added during Phase 1 (frontend M6–M7)
 Endpoints the frontend uses that the original tables above didn't list. Payloads are in the notes below each milestone.
@@ -225,7 +230,7 @@ Verification rules (enforced by the service; mirrored by the mock): details can 
 { "placement": { …PlacementOut summary, "status": "pending_payment" | "trial" },
   "payment": { "authorization_url": "https://checkout.paystack.com/…", "reference": "HV-PF-…" } | null }  // null: replacement fee waived
 // GET /payments/{reference}/verify (payer only)
-{ "reference", "status": "pending|success|failed|refunded", "amount_kobo", "placement_id", "placement_status" }
+{ "reference", "status": "pending|success|failed|refund_pending|refunded", "refund_status", "amount_kobo", "placement_id", "placement_status" }
 // Family placement actions (all return PlacementOut unless noted; 404 for another family's placement)
 // POST /placements/{id}/confirm (Idempotency-Key)        trial → confirmed
 // POST /placements/{id}/cancel { "reason" }              pending_payment → cancelled; request reopens, proposals back to pending
@@ -237,7 +242,7 @@ Verification rules (enforced by the service; mirrored by the mock): details can 
 
 Replacement: allowed during the trial, or within `REPLACEMENT_WINDOW_DAYS` of confirming (`REPLACEMENT_WINDOW_CLOSED` after). The placement ends with `end_reason = "replaced"`, the original request closes, and a copy opens with `replaces_placement_id`. Reasons are at least 5 characters (`VALIDATION_ERROR` with `fields.reason`). The new placement carries `replacements_used` forward, so the free allowance is per placement fee.
 
-Accept checks, in order: proposal owned (404) → request `open` (`REQUEST_NOT_OPEN`) → proposal `pending` (`ILLEGAL_TRANSITION`) → worker `listed` (`WORKER_NOT_LISTED`) → no active placement (`WORKER_UNAVAILABLE`). Families need a verified email to post requests (`EMAIL_NOT_VERIFIED`). Cancelling a request declines its pending proposals. A `charge.success` after the hold expired marks the payment `refunded` and creates no placement.
+Accept checks, in order: proposal owned (404) → request `open` (`REQUEST_NOT_OPEN`) → proposal `pending` (`ILLEGAL_TRANSITION`) → worker `listed` (`WORKER_NOT_LISTED`) → no active placement (`WORKER_UNAVAILABLE`). Families need a verified email to post requests (`EMAIL_NOT_VERIFIED`). Cancelling a request declines its pending proposals. A payment confirmed after the hold expired is never applied: it becomes `refund_pending`, a full refund is started and an admin alert opened (ADR 0017 OD1). Replaying an accept or `/pay` with the same `Idempotency-Key` returns the stored response only while the checkout is still payable; otherwise the current link, `HOLD_EXPIRED` (lapsed), or, once paid, `REQUEST_NOT_OPEN` (accept) or `ILLEGAL_TRANSITION` (`/pay`).
 
 ## 5. Phase 1 → Phase 2 switch
 

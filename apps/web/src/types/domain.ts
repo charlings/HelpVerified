@@ -25,7 +25,9 @@ export type RequestStatus = "open" | "matched" | "cancelled" | "closed";
 export type ProposalStatus = "pending" | "accepted" | "declined" | "withdrawn" | "superseded";
 export type AgencyStatus = "pending" | "approved" | "suspended" | "rejected";
 export type SubscriptionStatus = "active" | "non_renewing" | "past_due" | "cancelled";
-export type PaymentStatus = "pending" | "success" | "failed" | "refunded";
+/** `refund_pending`: being refunded; `refunded` only once Paystack confirms the refund was processed (ADR 0017). */
+export type PaymentStatus = "pending" | "success" | "failed" | "refund_pending" | "refunded";
+export type RefundStatus = "none" | "in_progress" | "needs_attention" | "completed";
 
 /** List responses (api-contracts.md §1). */
 export type Paginated<T> = { items: T[]; page: number; page_size: number; total: number };

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { paymentsApi } from "@/features/payments/api";
+import { placementsApi } from "@/features/placements/api";
 import { familyRequestsApi } from "@/features/requests/family-api";
 import type { CreateRequestPayload } from "@/features/requests/schemas";
 import { workersApi } from "@/features/workers/api";
@@ -129,15 +130,23 @@ describe("accept and pay", () => {
     expect(events()).toBe(before);
   });
 
-  it("a payment after the hold expired is refunded and creates no placement", async () => {
+  it("a payment after the hold expired is being refunded, raises an alert and creates no placement", async () => {
     const { payment, placement } = await familyRequestsApi.accept("pr-amaka-ada");
     db.placements.find((p) => p.id === placement.id)!.hold_expires_at = new Date(Date.now() - 1000).toISOString();
     await paymentsApi.demoCharge(payment!.reference);
     expect(await paymentsApi.verify(payment!.reference)).toMatchObject({
-      status: "refunded",
+      status: "refund_pending",
+      refund_status: "in_progress",
       placement_status: "cancelled",
     });
     expect(db.requests.find((r) => r.id === "r-ada-nanny")?.status).toBe("open");
+    expect(db.alerts.filter((a) => !a.resolved_at).map((a) => a.kind)).toEqual(["late_payment"]);
+  });
+
+  it("paying after the hold expired is HOLD_EXPIRED, not a generic refusal", async () => {
+    const { placement } = await familyRequestsApi.accept("pr-amaka-ada");
+    db.placements.find((p) => p.id === placement.id)!.hold_expires_at = new Date(Date.now() - 1000).toISOString();
+    expect(await codeOf(placementsApi.pay(placement.id))).toBe("HOLD_EXPIRED");
   });
 
   it("only the payer can verify a payment", async () => {

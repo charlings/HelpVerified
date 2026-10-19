@@ -4,7 +4,8 @@
  */
 import type { AgencyAction } from "@/features/admin";
 import type { AgencyStatus } from "@/types/domain";
-import { db, type AuditAction, type MockAgency, type MockAuditEntry, type MockUser } from "./db";
+import type { AlertKind } from "@/features/admin";
+import { db, type AuditAction, type MockAgency, type MockAlert, type MockAuditEntry, type MockUser } from "./db";
 import { activePlacementFor, nowIso, subscriptionOf } from "./domain";
 import { errorResponse } from "./errors";
 
@@ -124,5 +125,32 @@ export function auditOut(entry: MockAuditEntry) {
     worker_id: entry.data.worker_id ?? null,
     reason: entry.data.reason ?? null,
     created_at: entry.created_at,
+  };
+}
+
+/** Opens an alert unless one for the same kind and payment is still unresolved (admin_alerts_one_open_per_subject). */
+export function raiseAlert(kind: AlertKind, paymentId: string, reference: string) {
+  const subject = `payment:${paymentId}`;
+  if (db.alerts.some((a) => a.kind === kind && a.subject_key === subject && !a.resolved_at)) return;
+  db.alerts.unshift({
+    id: `alert-${crypto.randomUUID()}`,
+    kind,
+    subject_key: subject,
+    payment_id: paymentId,
+    payment_reference: reference,
+    opened_at: nowIso(),
+    acknowledged_at: null,
+    acknowledged_by: null,
+    resolved_at: null,
+    resolved_by: null,
+    resolution_note: null,
+  });
+}
+
+export function alertOut(alert: MockAlert) {
+  return {
+    ...alert,
+    state: alert.resolved_at ? "resolved" : alert.acknowledged_at ? "acknowledged" : "open",
+    details: {},
   };
 }

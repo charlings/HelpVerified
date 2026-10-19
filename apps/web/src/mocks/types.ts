@@ -1,6 +1,6 @@
 /** Mock database rows. Shapes follow database.md §3 (snake_case), simplified where the UI doesn't care. */
 import type { Role } from "@/config/routes";
-import type { AuditAction } from "@/features/admin";
+import type { AlertKind, AuditAction } from "@/features/admin";
 import type {
   AgencyStatus,
   ListingStatus,
@@ -51,7 +51,7 @@ export type MockAuditEntry = {
   id: string;
   actor_id: string | null;
   action: AuditAction;
-  entity: "agency" | "worker" | "placement" | "document";
+  entity: "agency" | "worker" | "placement" | "document" | "alert";
   entity_id: string;
   data: { label: string; reason?: string; kind?: string; worker_id?: string };
   created_at: string;
@@ -184,4 +184,19 @@ export type MockPayment = {
   status: PaymentStatus;
   paid_at: string | null;
   created_at: string;
+};
+
+/** admin_alerts (ADR 0017): one unresolved alert per kind and subject. */
+export type MockAlert = {
+  id: string;
+  kind: AlertKind;
+  subject_key: string;
+  payment_id: string | null;
+  payment_reference: string | null;
+  opened_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  resolution_note: string | null;
 };

@@ -61,6 +61,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Alerts
+         * @description Payment and refund problems needing an admin (ADR 0017). Open ones oldest first.
+         */
+        get: operations["list_alerts_api_v1_admin_alerts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/alerts/{alert_id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acknowledge Alert
+         * @description Marks the alert as being looked at. It stays unresolved.
+         */
+        post: operations["acknowledge_alert_api_v1_admin_alerts__alert_id__acknowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/alerts/{alert_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Alert
+         * @description Records the outcome with a note. With `paystack_refund_id`, that refund (found or made in the Paystack
+         *     dashboard) is confirmed with Paystack and tracked until it's `processed`; refunds themselves are done in
+         *     the dashboard, never here (OD4).
+         */
+        post: operations["resolve_alert_api_v1_admin_alerts__alert_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/audit-log": {
         parameters: {
             query?: never;
@@ -780,7 +842,8 @@ export interface paths {
         put?: never;
         /**
          * Pay
-         * @description Resume the checkout for an unpaid hold (the same Paystack transaction, never a second one).
+         * @description Resume the checkout for an unpaid hold (the same Paystack transaction, never a second one). 409
+         *     HOLD_EXPIRED once the hold has expired; a replayed key is checked the same way (ADR 0017).
          */
         post: operations["pay_api_v1_placements__placement_id__pay_post"];
         delete?: never;
@@ -821,7 +884,9 @@ export interface paths {
         /**
          * Accept
          * @description Creates the placement and holds the worker (rule 2). Returns the checkout link, or `payment: null`
-         *     when a free replacement waives the fee. Send an `Idempotency-Key` so a retry can't act twice.
+         *     when a free replacement waives the fee. Send a new `Idempotency-Key` for each press of "Accept" and reuse
+         *     it only for automatic retries: a replay is checked first, so an expired hold is 409 HOLD_EXPIRED and a
+         *     paid one 409 REQUEST_NOT_OPEN, never a stale checkout link (ADR 0017).
          */
         post: operations["accept_api_v1_proposals__proposal_id__accept_post"];
         delete?: never;
@@ -1289,6 +1354,12 @@ export interface components {
              * @description Placement fees paid this calendar month (WAT)
              */
             fees_paid_this_month_kobo: number;
+            /**
+             * Open Alerts
+             * @description Unresolved payment and refund alerts (ADR 0017)
+             * @default 0
+             */
+            open_alerts: number;
             /** Pending Agencies */
             pending_agencies: components["schemas"]["AdminAgencySummary"][];
             /** Placements Active */
@@ -1652,10 +1723,69 @@ export interface components {
             state?: string | null;
         };
         /**
+         * AlertOut
+         * @description A persistent admin alert (ADR 0017 section F). `acknowledged` is still unresolved.
+         */
+        AlertOut: {
+            /** Acknowledged At */
+            acknowledged_at: string | null;
+            /** Acknowledged By */
+            acknowledged_by: string | null;
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            };
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "checkout_unresolved" | "unmatched_charge" | "refund_attention" | "refund_stuck" | "refund_admin_review" | "late_payment" | "duplicate_charge" | "settlement_failed" | "legacy_unresolved";
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Payment Id */
+            payment_id: string | null;
+            /** Payment Reference */
+            payment_reference: string | null;
+            /** Resolution Note */
+            resolution_note: string | null;
+            /** Resolved At */
+            resolved_at: string | null;
+            /**
+             * Resolved By
+             * @description The admin's name; 'System' when provider evidence resolved it
+             */
+            resolved_by: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "open" | "acknowledged" | "resolved";
+            /** Subject Key */
+            subject_key: string;
+        };
+        /** AlertResolveIn */
+        AlertResolveIn: {
+            /** Note */
+            note: string;
+            /**
+             * Paystack Refund Id
+             * @description A refund found or made in the Paystack dashboard, to track to processed
+             */
+            paystack_refund_id?: number | null;
+        };
+        /**
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "agency.approved" | "agency.rejected" | "agency.suspended" | "agency.reinstated" | "worker.check_flagged" | "document.viewed" | "placement.ended" | "worker.evidence_deleted";
+        AuditAction: "agency.approved" | "agency.rejected" | "agency.suspended" | "agency.reinstated" | "worker.check_flagged" | "document.viewed" | "placement.ended" | "worker.evidence_deleted" | "alert.acknowledged" | "alert.resolved";
         /** AuditEntry */
         AuditEntry: {
             action: components["schemas"]["AuditAction"];
@@ -1669,7 +1799,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "agency" | "worker" | "placement" | "document";
+            entity: "agency" | "worker" | "placement" | "document" | "alert";
             /** Entity Id */
             entity_id: string | null;
             /** Entity Label */
@@ -2167,6 +2297,17 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** Page[AlertOut] */
+        Page_AlertOut_: {
+            /** Items */
+            items: components["schemas"]["AlertOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
         /** Page[AuditEntry] */
         Page_AuditEntry_: {
             /** Items */
@@ -2253,10 +2394,15 @@ export interface components {
             /** Reference */
             reference: string;
             /**
+             * Refund Status
+             * @enum {string}
+             */
+            refund_status: "none" | "in_progress" | "needs_attention" | "completed";
+            /**
              * Status
              * @enum {string}
              */
-            status: "pending" | "success" | "failed" | "refunded";
+            status: "pending" | "success" | "failed" | "refund_pending" | "refunded";
         };
         /**
          * PaymentVerification
@@ -2272,10 +2418,15 @@ export interface components {
             /** Reference */
             reference: string;
             /**
+             * Refund Status
+             * @enum {string}
+             */
+            refund_status: "none" | "in_progress" | "needs_attention" | "completed";
+            /**
              * Status
              * @enum {string}
              */
-            status: "pending" | "success" | "failed" | "refunded";
+            status: "pending" | "success" | "failed" | "refund_pending" | "refunded";
         };
         /** PlacementOut */
         PlacementOut: {
@@ -2896,6 +3047,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminAgencyDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_alerts_api_v1_admin_alerts_get: {
+        parameters: {
+            query?: {
+                state?: "open" | "resolved" | "all";
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AlertOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acknowledge_alert_api_v1_admin_alerts__alert_id__acknowledge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_alert_api_v1_admin_alerts__alert_id__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertResolveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertOut"];
                 };
             };
             /** @description Validation Error */

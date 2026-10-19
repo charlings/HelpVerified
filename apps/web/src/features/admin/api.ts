@@ -3,6 +3,8 @@ import type { AgencyStatus, ListingStatus, Paginated, VerificationKind, WorkerRo
 import type {
   AdminAgency,
   AdminAgencySummary,
+  AdminAlert,
+  AlertFilter,
   AdminOverview,
   AdminWorker,
   AdminWorkerDetail,
@@ -27,6 +29,7 @@ export const adminKeys = {
   workers: (filters: AdminWorkerFilters) => ["admin", "workers", filters] as const,
   worker: (id: string) => ["admin", "worker", id] as const,
   audit: (action: AuditAction | undefined, page: number) => ["admin", "audit", action ?? "all", page] as const,
+  alerts: (state: AlertFilter, page: number) => ["admin", "alerts", state, page] as const,
 };
 
 export const adminApi = {
@@ -47,4 +50,9 @@ export const adminApi = {
     api.get<Paginated<AuditEntry>>("/admin/audit-log", {
       query: { page, page_size: 20, ...(action ? { action } : {}) },
     }),
+  alerts: (state: AlertFilter, page: number) =>
+    api.get<Paginated<AdminAlert>>("/admin/alerts", { query: { state, page, page_size: 20 } }),
+  acknowledgeAlert: (id: string) => api.post<AdminAlert>(`/admin/alerts/${id}/acknowledge`, {}),
+  resolveAlert: (id: string, body: { note: string; paystack_refund_id?: number }) =>
+    api.post<AdminAlert>(`/admin/alerts/${id}/resolve`, body),
 };

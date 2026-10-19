@@ -2,7 +2,7 @@ import { http, HttpResponse } from "msw";
 import { env } from "@/config/env";
 import { routes } from "@/config/routes";
 import { db, persist } from "../db";
-import { agencyOf, nowIso, paginate, requireAgency, subscriptionOf } from "../domain";
+import { agencyOf, nowIso, paginate, refundStatusOf, requireAgency, subscriptionOf } from "../domain";
 import { errorResponse, forcedError } from "../errors";
 import { mockLatency } from "../latency";
 import { DEMO_SUBSCRIPTION_KOBO } from "../seed";
@@ -80,6 +80,7 @@ export const billingHandlers = [
         currency: "NGN",
         reference: p.reference,
         status: p.status,
+        refund_status: refundStatusOf(p.status),
         paid_at: p.paid_at,
         created_at: p.created_at,
       }));

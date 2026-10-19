@@ -1,7 +1,8 @@
 import { http, HttpResponse } from "msw";
 import { env } from "@/config/env";
 import { db, persist } from "../db";
-import { activePlacementFor, nowIso } from "../domain";
+import { activePlacementFor, nowIso, refundStatusOf } from "../domain";
+import { raiseAlert } from "../admin-domain";
 import { errorResponse, forcedError } from "../errors";
 import { mockLatency } from "../latency";
 import { applyHoldExpiry, transition } from "../placements-domain";
@@ -28,6 +29,7 @@ export const paymentHandlers = [
     return HttpResponse.json({
       reference: payment.reference,
       status: payment.status,
+      refund_status: refundStatusOf(payment.status),
       amount_kobo: payment.amount_kobo,
       placement_id: payment.placement_id,
       placement_status: placementStatusFor(payment.placement_id),
@@ -87,7 +89,12 @@ export const paymentHandlers = [
     if (!placement || placement.status !== "pending_payment") {
       // Paid after the hold lapsed: never create a second active placement for the worker.
       const workerTaken = placement ? Boolean(activePlacementFor(placement.worker_id)) : true;
-      payment.status = workerTaken || placement?.status === "cancelled" ? "refunded" : payment.status;
+      if (workerTaken || placement?.status === "cancelled") {
+        // A full refund is started; it is `refunded` only once Paystack processes it (never in the demo).
+        payment.status = "refund_pending";
+        payment.paid_at = nowIso();
+        raiseAlert("late_payment", payment.id, payment.reference);
+      }
       persist();
       return HttpResponse.json({ status: payment.status });
     }

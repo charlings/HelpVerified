@@ -60,12 +60,19 @@ export function PaymentCallbackScreen() {
           {p.placement_id ? <div>{placementLink(p.placement_id, "Go to your placement")}</div> : null}
         </div>
       );
-    } else if (p.status === "refunded") {
-      title = "Your payment will be refunded";
+    } else if (p.status === "refund_pending" || p.status === "refunded") {
+      // TODO(content): refund wording awaits owner approval (owner-inputs #7d).
+      title = p.status === "refunded" ? "Your payment has been refunded" : "Your payment will be refunded";
       body = (
         <Alert tone="warning">
-          The hold on this worker ended before your payment arrived, so the placement couldn&apos;t go ahead. Your
-          payment will be refunded. Your request is open again for other proposals.
+          {p.placement_status === "trial" || p.placement_status === "confirmed"
+            ? "Your placement was already paid for, so this extra payment is being returned to you."
+            : "The hold on this worker ended before your payment arrived, so the placement couldn't go ahead. Your request is open again for other proposals."}{" "}
+          {p.status === "refunded"
+            ? "Paystack has processed the refund; your bank may take a few working days to show it."
+            : p.refund_status === "needs_attention"
+              ? "Our team is handling the refund and will contact you if anything is needed."
+              : "The refund has been started with Paystack."}
         </Alert>
       );
     } else if (p.status === "failed") {

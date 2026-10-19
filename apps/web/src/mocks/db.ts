@@ -3,7 +3,7 @@
  * the demo session and anything created in it (cleared when the tab closes).
  */
 import { DEMO_PASSWORD, DEMO_PLACEMENT_FEE_KOBO, seedData } from "./seed";
-import type { MockAccessLog, MockUpload } from "./types";
+import type { MockAccessLog, MockAlert, MockUpload } from "./types";
 
 export { DEMO_PASSWORD, DEMO_PLACEMENT_FEE_KOBO };
 export type * from "./types";
@@ -59,6 +59,8 @@ function seed() {
     idempotency: {} as Record<string, { status: number; body: unknown }>,
     /** Paystack webhook event IDs already processed (webhook_events UNIQUE(provider, event_id)). */
     webhookEvents: [] as string[],
+    /** Payment alerts for admins (ADR 0017). */
+    alerts: [] as MockAlert[],
     replacementRequests: [] as {
       id: string;
       placement_id: string;
@@ -73,7 +75,7 @@ function seed() {
 
 type Data = ReturnType<typeof seed>;
 
-const STORAGE_KEY = "hv-mock-db-v5"; // bump when the seed shape changes
+const STORAGE_KEY = "hv-mock-db-v6"; // bump when the seed shape changes
 
 function load(): Data {
   if (typeof sessionStorage !== "undefined") {

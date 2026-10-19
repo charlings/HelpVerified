@@ -12,5 +12,6 @@ export const paymentStatus: Record<PaymentStatus, { label: string; tone: BadgeTo
   pending: { label: "Pending", tone: "warning" },
   success: { label: "Paid", tone: "success" },
   failed: { label: "Failed", tone: "danger" },
+  refund_pending: { label: "Refund in progress", tone: "warning" },
   refunded: { label: "Refunded", tone: "neutral" },
 };

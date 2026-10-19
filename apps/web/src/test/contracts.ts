@@ -12,6 +12,7 @@ import type { Schemas } from "@helpverified/contracts";
 import type {
   AdminAgency,
   AdminAgencySummary,
+  AdminAlert,
   AdminOverview,
   AdminWorker,
   AdminWorkerDetail,
@@ -46,6 +47,7 @@ type Sends<Api, Web extends Api> = Web;
 // Bodies built from a form. The small inline bodies (login, reasons, ids) are covered by the e2e flows.
 export type RequestChecks = [
   Sends<Schemas["AgencyCreate"], AgencyPayload>,
+  Sends<Schemas["AlertResolveIn"], { note: string; paystack_refund_id?: number }>,
   Sends<Schemas["RequestCreate"], CreateRequestPayload>,
   Sends<Schemas["WorkerCreate"], CreateWorkerPayload>,
 ];
@@ -102,4 +104,6 @@ export type ResponseChecks = [
   Reads<AdminWorkerDetail, Schemas["AdminWorkerDetail"]>,
   Reads<AuditEntry, Schemas["AuditEntry"]>,
   Reads<Paginated<AuditEntry>, Schemas["Page_AuditEntry_"]>,
+  Reads<AdminAlert, Schemas["AlertOut"]>,
+  Reads<Paginated<AdminAlert>, Schemas["Page_AlertOut_"]>,
 ];

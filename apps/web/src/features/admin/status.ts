@@ -1,6 +1,6 @@
 import type { BadgeTone } from "@/components/ui/Badge";
 import type { AgencyStatus } from "@/types/domain";
-import type { AgencyAction, AuditAction } from "./types";
+import type { AgencyAction, AlertKind, AlertState, AuditAction } from "./types";
 
 /** The one place agency statuses get their label, colour and meaning. */
 export const agencyStatus: Record<AgencyStatus, { label: string; tone: BadgeTone; description: string }> = {
@@ -76,4 +76,54 @@ export const auditAction: Record<AuditAction, string> = {
   "document.viewed": "Viewed a document",
   "placement.ended": "Ended placement",
   "worker.evidence_deleted": "Deleted old evidence",
+  "alert.acknowledged": "Acknowledged an alert",
+  "alert.resolved": "Resolved an alert",
+};
+
+// TODO(content): alert titles and guidance await owner wording (owner-inputs #7d).
+/** What each payment alert means and what the admin should check. Refunds are made in the Paystack dashboard. */
+export const alertKind: Record<AlertKind, { title: string; guidance: string }> = {
+  checkout_unresolved: {
+    title: "Checkout couldn't be resolved",
+    guidance: "Paystack didn't confirm this checkout's outcome. Check the reference in the Paystack dashboard.",
+  },
+  unmatched_charge: {
+    title: "Payment for an unknown reference",
+    guidance: "Paystack reported a payment HelpVerified didn't start. Find the payer in the dashboard.",
+  },
+  refund_attention: {
+    title: "Refund needs attention",
+    guidance: "Paystack declined or failed the refund. Refund in the dashboard, then attach its refund ID.",
+  },
+  refund_stuck: {
+    title: "Refund hasn't finished",
+    guidance: "Paystack accepted the refund but hasn't processed it. Check its status in the dashboard.",
+  },
+  refund_admin_review: {
+    title: "Refund needs manual review",
+    guidance:
+      "We couldn't confirm whether this refund reached Paystack, so it wasn't sent again. Check the dashboard before refunding.",
+  },
+  late_payment: {
+    title: "Paid after the hold ended",
+    guidance: "The family paid after the worker's hold expired. A full refund was started automatically.",
+  },
+  duplicate_charge: {
+    title: "Placement paid twice",
+    guidance: "One payment was applied; the other is being refunded automatically.",
+  },
+  settlement_failed: {
+    title: "Payment couldn't be settled",
+    guidance: "A confirmed payment couldn't be applied after several tries. Check the placement and payment.",
+  },
+  legacy_unresolved: {
+    title: "Payment from before the upgrade",
+    guidance: "This payment's earlier state didn't prove its outcome. Check it in the Paystack dashboard.",
+  },
+};
+
+export const alertState: Record<AlertState, { label: string; tone: BadgeTone }> = {
+  open: { label: "Open", tone: "danger" },
+  acknowledged: { label: "Acknowledged", tone: "warning" },
+  resolved: { label: "Resolved", tone: "neutral" },
 };

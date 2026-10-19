@@ -13,6 +13,8 @@ export function auditEntityHref(entry: AuditEntry): string | null {
       return id ? routes.admin.worker(id) : null;
     case "placement":
       return id ? routes.admin.placement(id) : null;
+    case "alert":
+      return routes.admin.alerts;
     case "document":
       return entry.worker_id ? routes.admin.worker(entry.worker_id) : null;
   }

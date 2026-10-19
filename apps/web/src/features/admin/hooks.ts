@@ -5,7 +5,7 @@ import { useToast } from "@/components/feedback/Toast";
 import type { VerificationKind } from "@/types/domain";
 import { adminApi, adminKeys, type AdminWorkerFilters, type AgencyFilter } from "./api";
 import { agencyAction } from "./status";
-import type { AgencyAction, AuditAction } from "./types";
+import type { AgencyAction, AlertFilter, AuditAction } from "./types";
 
 export function useAdminOverview() {
   return useQuery({ queryKey: adminKeys.overview, queryFn: adminApi.overview });
@@ -68,6 +68,37 @@ export function useAgencyAction(id: string) {
       client.setQueryData(adminKeys.agency(id), agency);
       await client.invalidateQueries({ queryKey: adminKeys.all });
       toast.success(`${agency.name} ${agencyAction[action].done}.`);
+    },
+  });
+}
+
+export function useAdminAlerts(state: AlertFilter, page: number) {
+  return useQuery({
+    queryKey: adminKeys.alerts(state, page),
+    queryFn: () => adminApi.alerts(state, page),
+    placeholderData: (previous) => previous,
+  });
+}
+
+/** Acknowledging records that someone is on it; the alert stays unresolved. */
+export function useAcknowledgeAlert() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => adminApi.acknowledgeAlert(id),
+    onSuccess: () => client.invalidateQueries({ queryKey: adminKeys.all }),
+  });
+}
+
+/** Resolve with a note; optionally name a Paystack dashboard refund so it's tracked to processed. */
+export function useResolveAlert() {
+  const client = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; note: string; paystack_refund_id?: number }) =>
+      adminApi.resolveAlert(id, body),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: adminKeys.all });
+      toast.success("Alert resolved.");
     },
   });
 }

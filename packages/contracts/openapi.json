@@ -333,6 +333,12 @@
             "title": "Fees Paid This Month Kobo",
             "type": "integer"
           },
+          "open_alerts": {
+            "default": 0,
+            "description": "Unresolved payment and refund alerts (ADR 0017)",
+            "title": "Open Alerts",
+            "type": "integer"
+          },
           "pending_agencies": {
             "items": {
               "$ref": "#/components/schemas/AdminAgencySummary"
@@ -1293,6 +1299,179 @@
         "title": "AgencyUpdate",
         "type": "object"
       },
+      "AlertOut": {
+        "description": "A persistent admin alert (ADR 0017 section F). `acknowledged` is still unresolved.",
+        "properties": {
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
+          "acknowledged_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged By"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "checkout_unresolved",
+              "unmatched_charge",
+              "refund_attention",
+              "refund_stuck",
+              "refund_admin_review",
+              "late_payment",
+              "duplicate_charge",
+              "settlement_failed",
+              "legacy_unresolved"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "payment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Id"
+          },
+          "payment_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Reference"
+          },
+          "resolution_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Note"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The admin's name; 'System' when provider evidence resolved it",
+            "title": "Resolved By"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "acknowledged",
+              "resolved"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "subject_key": {
+            "title": "Subject Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "subject_key",
+          "payment_id",
+          "payment_reference",
+          "details",
+          "opened_at",
+          "acknowledged_at",
+          "acknowledged_by",
+          "resolved_at",
+          "resolved_by",
+          "resolution_note"
+        ],
+        "title": "AlertOut",
+        "type": "object"
+      },
+      "AlertResolveIn": {
+        "properties": {
+          "note": {
+            "maxLength": 1000,
+            "title": "Note",
+            "type": "string"
+          },
+          "paystack_refund_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A refund found or made in the Paystack dashboard, to track to processed",
+            "title": "Paystack Refund Id"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "title": "AlertResolveIn",
+        "type": "object"
+      },
       "AuditAction": {
         "enum": [
           "agency.approved",
@@ -1302,7 +1481,9 @@
           "worker.check_flagged",
           "document.viewed",
           "placement.ended",
-          "worker.evidence_deleted"
+          "worker.evidence_deleted",
+          "alert.acknowledged",
+          "alert.resolved"
         ],
         "title": "AuditAction",
         "type": "string"
@@ -1332,7 +1513,8 @@
               "agency",
               "worker",
               "placement",
-              "document"
+              "document",
+              "alert"
             ],
             "title": "Entity",
             "type": "string"
@@ -2589,6 +2771,37 @@
         "title": "Page[AgencyRequestOut]",
         "type": "object"
       },
+      "Page_AlertOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AlertOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total"
+        ],
+        "title": "Page[AlertOut]",
+        "type": "object"
+      },
       "Page_AuditEntry_": {
         "properties": {
           "items": {
@@ -2793,11 +3006,22 @@
             "title": "Reference",
             "type": "string"
           },
+          "refund_status": {
+            "enum": [
+              "none",
+              "in_progress",
+              "needs_attention",
+              "completed"
+            ],
+            "title": "Refund Status",
+            "type": "string"
+          },
           "status": {
             "enum": [
               "pending",
               "success",
               "failed",
+              "refund_pending",
               "refunded"
             ],
             "title": "Status",
@@ -2812,6 +3036,7 @@
           "currency",
           "reference",
           "status",
+          "refund_status",
           "paid_at",
           "created_at"
         ],
@@ -2859,11 +3084,22 @@
             "title": "Reference",
             "type": "string"
           },
+          "refund_status": {
+            "enum": [
+              "none",
+              "in_progress",
+              "needs_attention",
+              "completed"
+            ],
+            "title": "Refund Status",
+            "type": "string"
+          },
           "status": {
             "enum": [
               "pending",
               "success",
               "failed",
+              "refund_pending",
               "refunded"
             ],
             "title": "Status",
@@ -2873,6 +3109,7 @@
         "required": [
           "reference",
           "status",
+          "refund_status",
           "amount_kobo",
           "placement_id",
           "placement_status"
@@ -4534,6 +4771,191 @@
           }
         ],
         "summary": "Move Agency",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/alerts": {
+      "get": {
+        "description": "Payment and refund problems needing an admin (ADR 0017). Open ones oldest first.",
+        "operationId": "list_alerts_api_v1_admin_alerts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "open",
+              "enum": [
+                "open",
+                "resolved",
+                "all"
+              ],
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AlertOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Alerts",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/alerts/{alert_id}/acknowledge": {
+      "post": {
+        "description": "Marks the alert as being looked at. It stays unresolved.",
+        "operationId": "acknowledge_alert_api_v1_admin_alerts__alert_id__acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Acknowledge Alert",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/alerts/{alert_id}/resolve": {
+      "post": {
+        "description": "Records the outcome with a note. With `paystack_refund_id`, that refund (found or made in the Paystack\ndashboard) is confirmed with Paystack and tracked until it's `processed`; refunds themselves are done in\nthe dashboard, never here (OD4).",
+        "operationId": "resolve_alert_api_v1_admin_alerts__alert_id__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertResolveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resolve Alert",
         "tags": [
           "admin"
         ]
@@ -6332,7 +6754,7 @@
     },
     "/api/v1/placements/{placement_id}/pay": {
       "post": {
-        "description": "Resume the checkout for an unpaid hold (the same Paystack transaction, never a second one).",
+        "description": "Resume the checkout for an unpaid hold (the same Paystack transaction, never a second one). 409\nHOLD_EXPIRED once the hold has expired; a replayed key is checked the same way (ADR 0017).",
         "operationId": "pay_api_v1_placements__placement_id__pay_post",
         "parameters": [
           {
@@ -6456,7 +6878,7 @@
     },
     "/api/v1/proposals/{proposal_id}/accept": {
       "post": {
-        "description": "Creates the placement and holds the worker (rule 2). Returns the checkout link, or `payment: null`\nwhen a free replacement waives the fee. Send an `Idempotency-Key` so a retry can't act twice.",
+        "description": "Creates the placement and holds the worker (rule 2). Returns the checkout link, or `payment: null`\nwhen a free replacement waives the fee. Send a new `Idempotency-Key` for each press of \"Accept\" and reuse\nit only for automatic retries: a replay is checked first, so an expired hold is 409 HOLD_EXPIRED and a\npaid one 409 REQUEST_NOT_OPEN, never a stale checkout link (ADR 0017).",
         "operationId": "accept_api_v1_proposals__proposal_id__accept_post",
         "parameters": [
           {

@@ -82,6 +82,9 @@ export const familyPlacementHandlers = [
     if (forced) return forced;
     const r = resolve(request, params.id);
     if ("error" in r) return r.error;
+    // OD2 (ADR 0017): an expired hold is HOLD_EXPIRED; anything else unpayable stays ILLEGAL_TRANSITION.
+    if (r.placement.status === "cancelled" && r.placement.end_reason === "payment_expired")
+      return errorResponse("HOLD_EXPIRED", "The hold on this worker has ended.");
     if (r.placement.status !== "pending_payment") return errorResponse("ILLEGAL_TRANSITION", "Nothing to pay.");
     const payment = db.payments.find((p) => p.placement_id === r.placement.id && p.status === "pending");
     if (!payment) return errorResponse("NOT_FOUND", "Payment not found.");

@@ -1,9 +1,10 @@
 import { api } from "@/lib/api-client";
-import type { PaymentStatus } from "@/types/domain";
+import type { PaymentStatus, RefundStatus } from "@/types/domain";
 
 export type PaymentVerification = {
   reference: string;
   status: PaymentStatus;
+  refund_status: RefundStatus;
   amount_kobo: number;
   placement_id: string | null;
   placement_status: string | null;

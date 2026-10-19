@@ -140,7 +140,10 @@ test.describe("app shell per viewport", () => {
         "Agency navigation",
         ["Dashboard", "Workers", "Requests", "Placements", "Billing", "Settings"],
       ],
-      [routes.admin.home]: ["Admin navigation", ["Overview", "Agencies", "Workers", "Placements", "Audit log"]],
+      [routes.admin.home]: [
+        "Admin navigation",
+        ["Overview", "Agencies", "Workers", "Alerts", "Placements", "Audit log"],
+      ],
     } as const;
     for (const [path, [name, labels]] of Object.entries(expected)) {
       await signInAs(context, roleForPath(path)!);

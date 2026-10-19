@@ -1,5 +1,5 @@
 import { api } from "@/lib/api-client";
-import type { Paginated, PaymentStatus, SubscriptionStatus } from "@/types/domain";
+import type { Paginated, PaymentStatus, RefundStatus, SubscriptionStatus } from "@/types/domain";
 
 export type Subscription = {
   plan_name: string;
@@ -17,6 +17,7 @@ export type Payment = {
   currency: "NGN";
   reference: string;
   status: PaymentStatus;
+  refund_status: RefundStatus;
   paid_at: string | null;
   created_at: string;
 };

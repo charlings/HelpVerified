@@ -13,7 +13,8 @@ export type AppIconName =
   | "inbox"
   | "billing"
   | "agencies"
-  | "audit";
+  | "audit"
+  | "alerts";
 
 export type AppNavItem = NavLink & {
   icon: AppIconName;
@@ -113,11 +114,12 @@ export const appNav: Record<Role, AppNav> = {
   },
   super_admin: {
     workspaceLabel: "Admin",
-    primaryCount: 5,
+    primaryCount: 4, // Placements and Audit log go in "More" on phones; Alerts stays one tap away
     items: [
       { label: "Overview", href: routes.admin.home, icon: "dashboard", exact: true },
       { label: "Agencies", href: routes.admin.agencies, icon: "agencies" },
       { label: "Workers", href: routes.admin.workers, icon: "workers" },
+      { label: "Alerts", href: routes.admin.alerts, icon: "alerts" },
       { label: "Placements", href: routes.admin.placements, icon: "placements" },
       { label: "Audit log", href: routes.admin.audit, icon: "audit" },
     ],

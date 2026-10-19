@@ -1511,3 +1511,16 @@ Nothing in this list is complete just because the ADR text was amended.
   downgrade must map the new payment states back to the four old ones, and refuse if `payment_refunds` or
   `admin_alerts` hold unresolved rows. The proposed forward mapping is in section H; it isn't final.
 - **Not changed:** a Paystack refusal of the seeded `@demo.hv` emails (owner input #12).
+
+## Implementation status (2026-10-19, local commits on `feature/backend`, not pushed; ADR remains Proposed)
+
+Built on `feature/backend` (local commits, not pushed) and tested on disposable databases only (`hv_adr0017_tests`, `hv_adr0017_scratch`); the project databases were not touched and nothing was seeded.
+
+- Migration `0008` (attempt states, `payment_refunds`, `admin_alerts`, counter-based I8 via `payments.refund_committed_kobo` + `CHECK`, placement transition trigger, legacy mapping with `legacy_unresolved` alerts, guarded downgrade).
+- Engineering resolutions of the contract questions: X1 wire status `refund_pending` plus `refund_status`; X2 `CHECKOUT_ATTEMPTS_EXHAUSTED` (409); X3 `CHECKOUT_IN_PROGRESS` (409).
+- I8 design changed from a trigger sum to a counter column: on PostgreSQL 16.15, sum-only triggers over-commit under REPEATABLE READ and lock-then-sum deadlocks without an application lock; the counter + `CHECK` was safe under both levels.
+- Fix found by the new concurrency tests: `SELECT ... FOR UPDATE` now always refreshes loaded ORM objects (`app/db/session.py`); without it a settlement that waited on a lock decided on stale state.
+- Additional test-mode observations: partial refunds can repeat until the total is reached; the refund-list `transaction` filter takes the numeric transaction ID; refunds below ₦50 are refused; `channels: ["card"]` is accepted.
+- Tests: API 553 passed / 0 failed / 0 skipped (`test_seed.py` excluded because it seeds with `reset=True`), plus new refund-lifecycle, admin-alert, migration-mapping and race tests; ruff and mypy clean. Contracts regenerated with `pnpm contracts:generate`.
+
+Still required before Accepted: owner decisions in owner-inputs #7d (settlement-time rule, attempt cap, partial/repeat refund policy, family and admin wording marked `TODO(content)`, legacy rows, resubmission gate) and the #13a live-mode verifications.

@@ -1,4 +1,5 @@
 import {
+  BellRing,
   Building2,
   ClipboardList,
   CreditCard,
@@ -24,4 +25,5 @@ export const appIcons: Record<AppIconName, LucideIcon> = {
   billing: Receipt,
   agencies: Building2,
   audit: ScrollText,
+  alerts: BellRing,
 };

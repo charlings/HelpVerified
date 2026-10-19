@@ -2,7 +2,7 @@
  * Business rules shared by mock handlers. They mirror database.md (listing gate, one active
  * placement per worker, delist on item change) so the UI is built against realistic behaviour.
  */
-import type { ActivePlacementStatus, VerificationKind } from "@/types/domain";
+import type { ActivePlacementStatus, PaymentStatus, RefundStatus, VerificationKind } from "@/types/domain";
 import { db, persist, type MockAgency, type MockUser, type MockWorker } from "./db";
 import { errorResponse } from "./errors";
 
@@ -138,4 +138,11 @@ export function paginate<T>(rows: T[], url: URL) {
 export async function sha256Hex(value: string): Promise<string> {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** The API derives `refund_status` from the payment's refund rows; the mock has at most one refund, never processed. */
+export function refundStatusOf(status: PaymentStatus): RefundStatus {
+  if (status === "refund_pending") return "in_progress";
+  if (status === "refunded") return "completed";
+  return "none";
 }

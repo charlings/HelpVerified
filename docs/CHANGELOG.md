@@ -1,5 +1,34 @@
 # Changelog
 
+## ADR 0017 implementation — checkout attempts, refunds, admin alerts (2026-10-19)
+
+**Status: implemented and tested locally on `feature/backend`; not pushed; not signed off. ADR 0017 stays Proposed:** the owner decisions in owner-inputs #7d and the live-mode checks in #13a are still open. The owner authorised implementation on 2026-10-19 ("Resolve ADR 0017 and Forge Ahead Safely"). All tests ran on disposable databases (`hv_adr0017_tests`, `hv_adr0017_scratch`); the project databases were not touched and nothing was seeded. Paystack was used in test mode only (test keys; the findings are in ADR 0017); no live transactions or live refunds.
+
+### 1. Objective
+Build ADR 0017's target checkout design: ambiguous initialisation handled without double charges, no payment applied after the hold (OD1), `HOLD_EXPIRED` (OD2), tracked refunds that are never resent blindly (OD8), persistent admin alerts (OD4), a separate `refund_status` (OD6), and the idempotency replay rule.
+
+### 2. Decisions taken in this stage (engineering; recorded in ADR 0017)
+- X1: wire status `refund_pending`, plus `refund_status` (`none | in_progress | needs_attention | completed`); `refunded` only after Paystack reports `processed`.
+- X2: `CHECKOUT_ATTEMPTS_EXHAUSTED` (409) at the provisional cap of 3 attempts.
+- X3: `CHECKOUT_IN_PROGRESS` (409) when another request is opening the same checkout; no lock is held across the Paystack call.
+- I8 (refunds never exceed the capture) uses a counter column kept by a trigger plus a `CHECK`, not a trigger that sums rows. PostgreSQL 16.15 experiments showed the sum design over-commits under REPEATABLE READ (and deadlocks without an application lock); the counter was safe under both isolation levels.
+- Every `SELECT … FOR UPDATE` now refreshes loaded ORM objects (`app/db/session.py`). The new race tests found that, without it, a settlement that waited on a lock acted on stale state.
+
+### 3. Files
+- **Migration** `0008_checkout_attempts_refunds` (+ SQL copy): new attempt states, `refund_status` enum, `payments` reconciliation columns and `refund_committed_kobo`, `payment_refunds`, `admin_alerts`, placement transition trigger, legacy mapping (nothing becomes `refunded` without evidence; unclear rows get `legacy_unresolved` alerts), guarded downgrade.
+- **API:** `payments` (models, repository, schemas, service rewritten, router), `admin` (alert models, repository, schemas, service, router: `GET /admin/alerts`, acknowledge, resolve), `core/errors.py`, `core/config.py`, `core/idempotent.py` (replay hook), `integrations/paystack.py` (refund fetch and list, error classification), `jobs/registry.py` (`reconcile_checkouts`, `watch_checkouts`), `placements/service.py`, `requests/router.py`, `notifications/messages.py`, `scripts/seed.py`, `.env.example`.
+- **Web:** admin Alerts page (`/admin/alerts`, nav item; on phones Placements and Audit log move to "More"), resolve dialog, `refund_pending` label, payment callback wording, error messages for the three new codes, mock handlers (alerts, `refund_status`, `HOLD_EXPIRED` on `/pay`).
+- **Contracts:** regenerated with `pnpm contracts:generate`.
+- **Docs:** ADR 0017 implementation status, `docs/database.md`, `docs/swagger-test-plan.md`, `docs/owner-inputs.md` (#8a now three every-minute jobs), skill references `api-contracts.md` and `backend.md`.
+
+### 4. Tests
+- API: full suite 553 passed, 0 failed, 0 skipped (`tests/integration/test_seed.py` excluded: it seeds with `reset=True`). New: `test_checkout_recovery.py` (19), `test_refund_lifecycle.py` (5), `test_admin_alerts.py` (4), `test_migration_0008.py` (1), `tests/concurrency/test_payment_races.py` (3; concurrency suite passed three runs in a row). ruff, ruff format and mypy (app, tests, scripts) clean.
+- Web: lint and typecheck clean; vitest 512 passed in 50 files; `next build` succeeded. Playwright e2e was not run in this stage (the admin nav expectation in `e2e/navigation.spec.ts` was updated).
+
+### 5. Open
+- Owner decisions #7d (settlement-time rule, attempt cap, partial and repeat refund policy, wording marked `TODO(content)`, legacy rows, the automatic refund resubmission gate) and live checks #13a, before ADR 0017 can be Accepted.
+- B7 remains not started: it needs the owner's plan approval and prerequisites #7, #7b and #7c.
+
 ## Pre-B7 stage — contact form, demo seed, placement per proposal, failed-checkout recovery (2026-10-15)
 
 **Status: code committed to `feature/backend` on 2026-10-15 (`4f1b00b`). Not signed off. ADR 0017 is Proposed, not accepted.** On 2026-10-19 the owner gave the ADR's direction, then approved a target checkout design **as a design only**. The ADR was revised five times that day (documentation only) to record:

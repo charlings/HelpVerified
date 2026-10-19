@@ -4,6 +4,7 @@ import type { AgencyAction } from "@/features/admin";
 import type { AgencyStatus } from "@/types/domain";
 import {
   agencyDetailOut,
+  alertOut,
   agencySummaryOut,
   agencyTransitions,
   applyAgencyStatusEffects,
@@ -75,6 +76,7 @@ export const adminHandlers = [
         .reduce((sum, p) => sum + p.amount_kobo, 0),
       pending_agencies: pending.map(agencySummaryOut),
       recent_audit: db.auditLog.slice(0, 5).map(auditOut),
+      open_alerts: db.alerts.filter((a) => !a.resolved_at).length,
     });
   }),
 
@@ -225,5 +227,65 @@ export const adminHandlers = [
     });
     persist();
     return HttpResponse.json(agencyDetailOut(agency));
+  }),
+
+  // ---- Payment alerts (ADR 0017). Refunds are made in the Paystack dashboard; the demo never makes one. ----
+
+  http.get(`${base}/admin/alerts`, async ({ request }) => {
+    await mockLatency();
+    const forced = forcedError(request);
+    if (forced) return forced;
+    const r = requireAdmin(authenticate(request));
+    if ("error" in r) return r.error;
+    const url = new URL(request.url);
+    const state = url.searchParams.get("state") ?? "open";
+    const rows = db.alerts
+      .filter((a) => state === "all" || (state === "resolved" ? Boolean(a.resolved_at) : !a.resolved_at))
+      .map(alertOut);
+    return HttpResponse.json(paginate(rows, url));
+  }),
+
+  http.post(`${base}/admin/alerts/:id/acknowledge`, async ({ request, params }) => {
+    await mockLatency();
+    const forced = forcedError(request);
+    if (forced) return forced;
+    const r = requireAdmin(authenticate(request));
+    if ("error" in r) return r.error;
+    const alert = db.alerts.find((a) => a.id === params.id);
+    if (!alert) return errorResponse("NOT_FOUND", "Alert not found.");
+    if (alert.resolved_at) return errorResponse("ILLEGAL_TRANSITION", "This alert is already resolved.");
+    if (!alert.acknowledged_at) {
+      Object.assign(alert, { acknowledged_at: nowIso(), acknowledged_by: r.admin.full_name });
+      writeAudit(r.admin, "alert.acknowledged", "alert", alert.id, { label: alert.payment_reference ?? alert.kind });
+      persist();
+    }
+    return HttpResponse.json(alertOut(alert));
+  }),
+
+  http.post(`${base}/admin/alerts/:id/resolve`, async ({ request, params }) => {
+    await mockLatency();
+    const forced = forcedError(request);
+    if (forced) return forced;
+    const r = requireAdmin(authenticate(request));
+    if ("error" in r) return r.error;
+    const body = (await request.json().catch(() => ({}))) as { note?: string; paystack_refund_id?: number };
+    const note = (body.note ?? "").trim();
+    if (note.length < 5)
+      return errorResponse("VALIDATION_ERROR", "Note required.", {
+        note: ["Give a reason of at least 5 characters. The other side will see it."],
+      });
+    const alert = db.alerts.find((a) => a.id === params.id);
+    if (!alert) return errorResponse("NOT_FOUND", "Alert not found.");
+    if (alert.resolved_at) return errorResponse("ILLEGAL_TRANSITION", "This alert is already resolved.");
+    if (body.paystack_refund_id !== undefined)
+      // The demo has no Paystack dashboard, so no refund can be confirmed (the API returns this for unknown IDs).
+      return errorResponse("PAYMENT_PROVIDER_ERROR", "Paystack doesn't know that refund.");
+    Object.assign(alert, { resolved_at: nowIso(), resolved_by: r.admin.full_name, resolution_note: note });
+    writeAudit(r.admin, "alert.resolved", "alert", alert.id, {
+      label: alert.payment_reference ?? alert.kind,
+      reason: note,
+    });
+    persist();
+    return HttpResponse.json(alertOut(alert));
   }),
 ];
