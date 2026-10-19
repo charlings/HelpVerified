@@ -1,5 +1,104 @@
 # Changelog
 
+## Pre-B7 stage — contact form, demo seed, placement per proposal, failed-checkout recovery (2026-10-15)
+
+**Status: code committed to `feature/backend` on 2026-10-15 (`4f1b00b`). Not signed off. ADR 0017 is Proposed, not accepted.** On 2026-10-19 the owner gave the ADR's direction, then approved a target checkout design **as a design only**. The ADR was revised five times that day (documentation only) to record:
+- the direction;
+- the recovery rules;
+- Paystack evidence classified as documented, unverified, or observed in test mode. The test-mode findings come from the owner-authorised checks T1–T8 on 2026-10-19: test keys only, no live transactions. Some checks ran only in part or not at all; see the ADR;
+- owner decisions OD1–OD9, approved as **design direction only**. That isn't acceptance of the ADR, and nothing is implemented. They cover:
+  - no payment applied after the hold expires;
+  - `HOLD_EXPIRED`;
+  - card-only proposed at launch, and a rule for authoritatively confirmed failed attempts;
+  - persistent admin alerts with a console alert list, refunds handled manually in the Paystack dashboard;
+  - a provisional 7-day watch window;
+  - a separate `refund_status`;
+  - duplicate-reference and duplicate-refund reconciliation;
+  - technical safeguards;
+- explicit handling of ambiguous initialisation;
+- invariants enforced by the database;
+- the late-payment, refund and reconciliation lifecycles;
+- persistent admin alerts;
+- the idempotency replay rule;
+- its relation to ADRs 0013, 0014 and 0015;
+- the exact contract and test changes required.
+
+The target design isn't built; the code in `4f1b00b` follows the earlier design. This entry was written on 2026-10-19 from the commit and the ADR, because the stage had no changelog entry. The same commit accidentally reset the "Current phase" block in `CLAUDE.md` to the M1 template; that block was restored on 2026-10-19.
+
+### 1. Objective
+Fix the faults the Swagger run of 2026-10-14 found (`docs/swagger-test-plan.md`, known issues 2 and 3). Add the public contact form and a demo seed for B7's end-to-end tests. Commit the API types the web app will be built against.
+
+### 2. Files created
+- `apps/api/app/modules/contact/` (`router`, `schemas`, `service`): `POST /contact`, public, rate-limited per IP (`RATE_LIMIT_CONTACT_PER_HOUR`), answers 202 and emails `CONTACT_INBOX` after the response
+- Migration `20261015_0007_placement_per_proposal.py` and copy `app/db/sql/0007_placement_per_proposal.sql`: the unique constraint on `placements.proposal_id` becomes a plain index
+- `apps/api/app/scripts/seed.py`: demo data that mirrors `apps/web/src/mocks/seed.ts`; refused in staging and production; passwords from `SEED_DEMO_PASSWORD` and `SEED_ADMIN_PASSWORD`; stable UUIDv5 IDs. Rows are written directly, not through the services, and PostgreSQL's listing trigger and one-active-placement indexes still enforce both rules
+- `apps/api/scripts/export_openapi.py`; `packages/contracts/` (`openapi.json`, generated `src/schema.ts`, `src/index.ts`, `package.json`)
+- Tests: `tests/integration/test_contact.py`, `tests/integration/test_seed.py`; web `AuditList.test.tsx`, `agency-billing.test.tsx`, `src/test/contracts.ts`, `e2e/seed-ids.ts`
+- Docs: `docs/decisions/0017-failed-checkout-recovery.md`, `docs/swagger-test-plan.md`
+
+### 3. Files modified
+- `app/core/errors.py`: `PAYMENT_PROVIDER_ERROR` carries `details.reason` (`unavailable` or `rejected`)
+- `app/integrations/paystack.py`: tells "unreachable" apart from "refused"; `app/integrations/email.py`
+- `app/modules/placements/service.py`, `repository.py`, `models.py`: accept resumes this proposal's live hold, and releases its own lapsed hold before re-running every check; checkout runs in its own transaction with the placement row locked
+- `app/modules/payments/service.py`: a failed checkout rolls back, leaving no payment row
+- `app/core/config.py`, `deps.py`, `main.py`, `admin/schemas.py`, `users/schemas.py`
+- Tests: `tests/concurrency/test_concurrent_accepts.py`, `tests/integration/test_accept.py`, `test_auth_google.py`, `tests/unit/test_paystack.py`, `tests/fakes.py`
+- Web: agency billing screen and page, payments (`api.ts`, `DemoCheckoutScreen.tsx`), admin audit list and agency detail, family settings; feature `types.ts`/`api.ts` aligned with the contracts; mock `billing` and `payments` handlers and `mocks/seed.ts`; `apps/web/package.json` (`@helpverified/contracts`)
+- Root `package.json` (`contracts:generate`), `pnpm-lock.yaml`, `.env.example` (contact and seed settings), `.github/workflows/ci.yml` (new `contracts` job: regenerate the types and fail on a diff)
+- Skill reference `database.md` (placements schema, §7 checkout recipe); `CLAUDE.md` (see Status)
+
+### 4. Key decisions
+ADR 0017 (Proposed; none of these is accepted yet). It proposes:
+- one error code with two reasons;
+- the hold survives a failed checkout, and the 502 includes `placement_id` and `hold_expires_at`;
+- accept is resumable without extending the hold (recovery rules R1–R4, plus the idempotency replay rule);
+- a proposal may have several placements over time, but at most one is active per worker and per request (the owner approved this direction on 2026-10-19).
+
+The built checkout design (one attempt at a time, with the placement row locked during the Paystack call) is **not final**. ADR 0017's target design replaces it, but only on paper so far. The target:
+- commits each attempt before calling Paystack, and holds no lock during the call;
+- reconciles ambiguous attempts with the same reference, and never treats a 404 as failure;
+- allows one open attempt and one applied payment per placement (database constraints);
+- tracks refunds to `processed` with no blind re-send;
+- raises persistent admin alerts for anything unresolved.
+
+It is approved as a design and not implemented. The contact form and the demo seed have no ADR of their own. The contact form implements `POST /contact` as already specified in `api-contracts.md` ("Added during Phase 1"). The seed follows `database.md` §8, which ADR 0012 had scheduled for B8; it was built early, for B7's end-to-end tests.
+
+### 5. Tests and checks
+Not recorded when the stage was committed. They weren't re-run on 2026-10-19 either, because that change only touched documentation.
+
+### 6. Known issues
+- The web app still shows "We couldn't reach our payment provider" for every `PAYMENT_PROVIDER_ERROR`. The MSW accept handler doesn't resume a live hold the way the API now does. `api-contracts.md` hasn't been updated (ADR 0009). ADR 0017 lists the changes required.
+- Checkout holds the placement row lock during the Paystack call (up to 15 s). If Paystack's reply times out after it created the transaction, the rollback loses that reference. A payment to it would then be logged as an unknown reference, neither granted nor refunded (ADR 0017, "Built today").
+- Repeating a stored successful accept with the same `Idempotency-Key` after its hold has lapsed returns the stale stored body for up to 24 h. ADR 0017's replay rule fixes this, once it is implemented.
+- Refunds (built in B5 and B6, found in this review):
+  - a refund request that times out is sent again, even though Paystack may already have processed it (the outcome is undocumented);
+  - `refund_sent_at` records that Paystack accepted the request, not that the refund was processed;
+  - `refund.*` webhooks are ignored;
+  - a refund that keeps failing produces only an error log, not an admin alert.
+
+  ADR 0017's refund lifecycle addresses these, once it is implemented.
+- `docs/swagger-test-plan.md` still expects PR17 (accepting again with the same key) to return 409 `REQUEST_NOT_OPEN`. Under ADR 0017 it returns 201.
+- Paystack refuses the seeded `@demo.hv` emails (Swagger known issue 1; owner input #12).
+- Swagger known issue 4 (a pending agency can add workers) is still to be confirmed by the owner.
+- Migration 0007's downgrade fails once a proposal has more than one placement.
+
+### 7. Assumptions
+None recorded beyond ADR 0017.
+
+### 8. Acceptance criteria
+This stage has no milestone criteria of its own. ADR 0017 is **not accepted**, and its design direction (OD1–OD9) isn't implemented. Still open:
+- the remaining Paystack checks (T2, T7, T6's webhook bodies, T8 on the hosted page);
+- live-mode confirmation of O1, O6 and O7;
+- the card-only Paystack configuration;
+- the implementation slot;
+- the final technical plan;
+- acceptance.
+
+Technical questions Q1 (refund matching) and Q4 (which statuses count as an authoritative failure) are open. Q2 and Q3 are decided as design direction (OD1, OD6). The 7-day watch window is provisional.
+
+### 9. Recommended next step
+The owner decides ADR 0017's remaining items: the implementation slot, and if feasible the hosted-checkout retry check (T8). Then the target design's technical plan is written and approved, the ADR is accepted, and after it the B7 plan, each before any work starts.
+
 ## Google sign-in stage (2026-10-13)
 
 **Status: signed off by the owner 2026-10-13; committed to `feature/backend`.** The credentials live check passed on 2026-10-13 (`scripts.google_live_check`: Google accepted the client, keys OK). The browser sign-in (owner input #6b) is checked at B7.

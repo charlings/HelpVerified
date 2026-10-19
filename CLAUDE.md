@@ -14,11 +14,18 @@ Both are enforced in PostgreSQL (trigger + partial unique index) **and** in one 
 ## Current phase
 
 <!-- Update this block at the start and end of every milestone. -->
-- **Phase:** 1 — Frontend
-- **Milestone:** M1 — Scaffold and design system
-- **Status:** not started
-- **Backend work:** do not start until M9 is signed off by the owner.
-- **Data:** frontend uses MSW mocks (`NEXT_PUBLIC_API_MOCKING=enabled`). Never imply auth or payments are real while mocks are on.
+- **Next milestone:** **B7 — Integration. Not started.** It waits for the owner's approval of a B7 plan and for the prerequisites below.
+- **Frontend (Phase 1), M1–M9:** complete and signed off 2026-10-06 (`docs/frontend-signoff.md`; Lighthouse performance still to be confirmed by the CI job). API contract frozen (ADR 0009).
+- **Backend (Phase 2), B1–B5:** complete and signed off 2026-10-07: B1 (ADR 0010), B2 (ADR 0011), B3 (rule 1, ADR 0012), B4 (rule 2, ADR 0013), B5 (Paystack test mode, ADR 0014). Backend follows `docs/backend-handoff.md`.
+- **Backend B6 — Notifications + jobs:** code complete and committed 2026-10-11 (ADR 0015); **not yet signed off**. Its email criterion is "partly met" until owner input #3, a real app email end to end, which the owner deferred to B7. Brevo SMTP connectivity passed 2026-10-13; tests are pinned to the outbox. Idle-worker retention 12 months; production jobs run as Render Cron Jobs with `JOBS_ENABLED=false` on the web service (owner, 2026-10-13). Firestore mirror off (`NOTIFICATIONS_MIRROR=none`; owner, 2026-10-19).
+- **Google sign-in:** complete and signed off 2026-10-13 (ADR 0016; the credentials check passed). The real browser sign-in has **not** been run; it's checked at B7 (owner input #6b).
+- **Pre-B7 stage** (contact form, demo seed, placement per proposal, failed-checkout recovery): committed 2026-10-15 (`4f1b00b`). Not signed off. ADR 0017 is **Proposed, not accepted**. The owner gave its direction on 2026-10-19 and approved its target checkout design **as a design only**: not built, and not authorised for implementation. Owner decisions OD1–OD9 are recorded there as design direction (not implemented). What remains open is in the ADR's "Owner decisions: status" section.
+- **B7 prerequisites:** ADR 0017 accepted; owner input #7 (is CI green on GitHub?) answered, as it is **unverified**; the owner's go-ahead. #3 and #6b are run during B7.
+- **Owner inputs:** `docs/owner-inputs.md` lists every key, account, price and decision the build waits on. Update it at the end of each milestone and report it in the milestone summary (owner's request).
+- **Jobs:** run inside the API (APScheduler + a Redis lock, `app/jobs/`). Run one by hand with `cd apps/api && uv run python -m app.jobs run <name>`. Jobs call services, never repositories.
+- **Git:** remote `origin` = https://github.com/charlings/HelpVerified. `main` holds the signed-off frontend. Backend milestones go on `feature/backend`: commit each milestone after the owner signs it off, push the branch, and merge into `main` only when the owner asks.
+- **Local services:** no Docker or admin rights on the owner's machine. PostgreSQL 16 runs from `%LOCALAPPDATA%\pgsql16` (`apps/api/scripts/pg-portable.ps1 start`) and Redis 7.4 from `%LOCALAPPDATA%\redis7` (`apps/api/scripts/redis-portable.ps1 start`); start both after each reboot. Tests use `127.0.0.1`, not `localhost` (Windows IPv6 fallback costs ~2 s per connection).
+- **Data:** frontend uses MSW mocks (`NEXT_PUBLIC_API_MOCKING=enabled`) until B7. Never imply auth or payments are real while mocks are on.
 
 ## Stack
 
@@ -68,7 +75,7 @@ Run a single test: `pnpm --filter web vitest run path/to/file.test.tsx` or `uv r
 | Mock API | `apps/web/src/mocks/` |
 | API settings and env | `apps/api/app/core/config.py` |
 | Business rules | `apps/api/app/modules/<module>/service.py` |
-| Placement transitions | `apps/api/app/modules/placements/state_machine.py` ↔ `apps/web/src/features/placements/status.ts` (keep identical) |
+| Placement transitions | `apps/api/app/modules/placements/state_machine.py` ↔ `apps/web/src/features/placements/state-machine.ts` (keep identical; labels in `status.ts`) |
 | SQL triggers and functions | `apps/api/app/db/migrations/` (readable copies in `app/db/sql/`) |
 | Decisions | `docs/decisions/NNNN-title.md` |
 | Changelog | `docs/CHANGELOG.md` |
@@ -117,7 +124,7 @@ Run a single test: `pnpm --filter web vitest run path/to/file.test.tsx` or `uv r
 
 ## Do not
 
-- Start backend work before frontend sign-off, or swap any stack choice without an ADR.
+- Swap any stack choice without an ADR.
 - Copy code, text, images or branding from the reference sites (joincolab.io, the Profusion template, the login image). Adapt layout and interaction ideas only.
 - Commit `.env` files, secrets or live Paystack keys. Use test keys outside production.
 - Add carousels, scroll-jacking or autoplaying motion.
@@ -125,7 +132,6 @@ Run a single test: `pnpm --filter web vitest run path/to/file.test.tsx` or `uv r
 
 ## Open decisions (owner to confirm)
 
-- Placement fee charged at accept (current default, uses the `pending_payment` hold) or at confirmation.
 - Trial length (default 14 days), replacement window (30 days after confirmation) and free replacements (1).
 - Brand fonts (proposed: Plus Jakarta Sans + Inter) and a white logo variant for dark backgrounds.
 - Licences for Photo1–3 (treated as temporary until confirmed).
@@ -133,3 +139,4 @@ Run a single test: `pnpm --filter web vitest run path/to/file.test.tsx` or `uv r
 
 When the owner decides one of these, update config, the ADR, the tests and this list together.
 
+Decided: the placement fee is charged **at accept**, using the 30-minute `pending_payment` hold (owner, 2026-10-07; ADR 0013).
