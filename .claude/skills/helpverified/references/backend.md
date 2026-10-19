@@ -133,7 +133,8 @@ Each integration is a thin class behind a protocol so tests swap in fakes.
 
 - **Cloudinary:** uploads are signed by the API (`POST /uploads/signature`) and go browser → Cloudinary directly. Folders: `workers/photos/<worker_id>` (`type: upload`), `workers/docs/<worker_id>/<kind>` (`type: authenticated`). After upload the client posts the `public_id` back; the API verifies it with the Admin API (exists, folder, size ≤ 10 MB, format in jpg/png/pdf) before saving. Viewing a document: API checks permission, writes `document_access_log`, returns a signed URL valid `CLOUDINARY_SIGNED_URL_TTL_SEC`.
 - **Paystack:** `initialize_transaction(email, amount_kobo, reference, metadata, callback_url)`, `verify_transaction(reference)`, subscriptions via plan code. Webhook: verify `x-paystack-signature` (HMAC-SHA512 of raw body with secret key) before parsing; store in `webhook_events` with `UNIQUE(provider,event_id)`; process inside a transaction; always return 200 for duplicates. Always re-verify amount and currency with `verify_transaction` before granting value.
-- **Firestore:** write `notifications/{user_id}/items/{id}` with `{type, title, body, link, created_at, read: false}`. Writes happen after the DB transaction commits. Firestore failure is logged and retried by job; it never rolls back business state.
+- **Notifications:** PostgreSQL is the feed (`notifications` table, served by `GET /api/v1/notifications`). Services write a row in the same transaction as the event; after commit the dispatcher emails it.
+- **Firestore (optional, off for now):** `NOTIFICATIONS_MIRROR=none` is the current setting (owner, 2026-10-19). Nothing needs Firestore: the web app doesn't read it, and B7 and the deploy don't need it. When set to `firestore` (needs `FIREBASE_PROJECT_ID` and `FIREBASE_CREDENTIALS_FILE`), each notification is also written to `notifications/{user_id}/items/{id}` with `{type, title, body, link, created_at, read}`, after the DB transaction commits. A Firestore failure is logged and retried; it never rolls back business state. A browser live feed would also need Firebase Auth tokens and security rules (not built; needs an ADR).
 - **Email:** transactional templates for verify email, reset password, proposal received, trial ending, placement confirmed, agency approved.
 
 ## 8. Jobs
@@ -146,7 +147,7 @@ APScheduler in the API process (single instance) guarded by a Redis lock, or ARQ
 | `trial_reminders` | daily 08:00 WAT | Notify family and agency 2 days before `trial_ends_on` |
 | `verification_expiry` | daily 02:00 WAT | Items past `expires_at` → `expired` (trigger delists) and notify agency |
 | `subscription_sync` | hourly | Reconcile subscription status with Paystack |
-| `notification_retry` | every 5 min | Retry failed Firestore writes |
+| `notification_retry` | every minute | Deliver notifications still due: emails that failed or were missed (e.g. written just before a restart), plus Firestore writes when the mirror is on. Delivery normally happens right after commit; this is the safety net |
 
 Jobs call services, never repositories directly, so rules apply identically. Tests freeze time with `time-machine`.
 

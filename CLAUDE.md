@@ -23,7 +23,7 @@ Both are enforced in PostgreSQL (trigger + partial unique index) **and** in one 
 ## Stack
 
 - `apps/web` — Next.js 15 (App Router), TypeScript strict, Tailwind v4, shadcn/ui, TanStack Query, Zustand, React Hook Form + Zod, MSW, Motion. Package manager: **pnpm**.
-- `apps/api` — FastAPI, Pydantic v2, SQLAlchemy 2.0 (async), Alembic, PostgreSQL 16, Redis, Firestore (notifications only), Cloudinary, Paystack. Package manager: **uv**.
+- `apps/api` — FastAPI, Pydantic v2, SQLAlchemy 2.0 (async), Alembic, PostgreSQL 16, Redis, Cloudinary, Paystack; Firestore is an optional notification mirror, off for now (`NOTIFICATIONS_MIRROR=none`). Package manager: **uv**.
 - `packages/contracts` — TypeScript types generated from the API's OpenAPI schema. Never edit by hand.
 
 ## Commands
@@ -110,7 +110,7 @@ Run a single test: `pnpm --filter web vitest run path/to/file.test.tsx` or `uv r
 - The listing trigger raises SQLSTATE `P0001` with hint `WORKER_NOT_VERIFIED`; the repository maps it to a 409.
 - Rejecting or expiring a verified item auto-delists the worker but does **not** end an active placement.
 - `ALTER TYPE … ADD VALUE` must run outside a transaction (use Alembic's `autocommit_block()`).
-- Firestore is a notification mirror. Write to it after the DB commit; a Firestore failure must never roll back business state.
+- PostgreSQL is the notification feed (`GET /api/v1/notifications`). Firestore is an optional mirror, off for now (`NOTIFICATIONS_MIRROR=none`; owner, 2026-10-19) and not needed for B7 or the deploy. If it's turned on, write to it after the DB commit; a Firestore failure must never roll back business state.
 - The three source photos are 14–25 MB each. Always use the optimised versions from `public/images/` via the asset map.
 - The logo PNG has a white background; use the trimmed transparent version in `assets/brand/`.
 - Mock handlers must enforce the same rules and return the same error envelopes as the real API.
