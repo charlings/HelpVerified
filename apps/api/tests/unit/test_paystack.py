@@ -3,14 +3,17 @@
 import asyncio
 import hashlib
 import hmac
+import json
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
 
 from app.core.config import MissingSettingsError, load_settings
-from app.core.errors import PaymentProviderRejected, PaymentProviderUnavailable
+from app.core.errors import PaymentProviderRejected, PaymentProviderUnavailable, TransactionNotFound
 from app.integrations.paystack import PaystackClient, valid_signature
 from app.modules.payments.service import BILLING_CALLBACK_PATH, PLACEMENT_CALLBACK_PATH, new_reference, scrub
 
@@ -53,7 +56,7 @@ def test_live_keys_only_in_production(
 
 
 SECRET = "sk_test_unit_secret_0123456789"
-CHECKOUT = {
+CHECKOUT: dict[str, Any] = {
     "email": "family@demo.hv",
     "amount_kobo": 2_000_000,
     "reference": "HV-PF-UNIT",
@@ -158,3 +161,136 @@ def test_callback_pages_exist_in_the_web_routes() -> None:
 
     assert f'paymentCallback: "{PLACEMENT_CALLBACK_PATH}"' in routes
     assert f'billing: "{BILLING_CALLBACK_PATH}"' in routes
+
+
+# Classification by Paystack's `code`, not HTTP status (ADR 0017, OD9 item 1). Bodies as in test mode.
+
+
+@pytest.mark.parametrize(
+    ("response", "code"),
+    [
+        (
+            httpx.Response(
+                400,
+                json={
+                    "status": False,
+                    "message": "Duplicate Transaction Reference",
+                    "type": "validation_error",
+                    "code": "duplicate_reference",
+                },
+            ),
+            "duplicate_reference",
+        ),
+        (
+            httpx.Response(
+                400,
+                json={
+                    "status": False,
+                    "message": "A refund already exist for this transaction",
+                    "code": "transaction_reversed",
+                },
+            ),
+            "transaction_reversed",
+        ),
+        (httpx.Response(400, json={"status": False, "message": "Bad"}), None),
+    ],
+    ids=["duplicate-reference", "transaction-reversed", "no-code"],
+)
+def test_a_refusal_carries_paystacks_code_internally(response: httpx.Response, code: str | None) -> None:
+    with pytest.raises(PaymentProviderRejected) as raised:
+        asyncio.run(_client(lambda _: response).initialize(**CHECKOUT))
+
+    assert raised.value.provider_code == code
+    assert raised.value.details == {"reason": "rejected"}  # the code never reaches a client
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(
+            400,
+            json={
+                "status": False,
+                "message": "Transaction reference not found.",
+                "code": "transaction_not_found",
+            },
+        ),  # observed in test mode (O4)
+        httpx.Response(404, json={"status": False, "message": "Entity not found"}),  # documented (D10)
+    ],
+    ids=["observed-400", "documented-404"],
+)
+def test_both_not_found_forms_are_transaction_not_found(response: httpx.Response) -> None:
+    with pytest.raises(TransactionNotFound):
+        asyncio.run(_client(lambda _: response).verify("HV-PF-UNIT"))
+
+
+def test_verify_keeps_the_transaction_id_and_status() -> None:
+    data = {
+        "id": 6674023666,
+        "reference": "R",
+        "status": "reversal-pending",
+        "amount": 100,
+        "currency": "NGN",
+    }
+    verified = asyncio.run(
+        _client(lambda _: httpx.Response(200, json={"status": True, "data": data})).verify("R")
+    )
+
+    assert (verified.transaction_id, verified.status) == (6674023666, "reversal-pending")
+
+
+def test_channels_are_sent_when_set() -> None:
+    sent: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.update(json.loads(request.content))
+        data = {"authorization_url": "https://x", "access_code": "ac", "reference": "R"}
+        return httpx.Response(200, json={"status": True, "data": data})
+
+    asyncio.run(_client(handler).initialize(**CHECKOUT, channels=["card"]))
+
+    assert sent["channels"] == ["card"]
+
+
+def test_refund_shapes_from_create_and_list() -> None:
+    """Create and fetch return the transaction as an object; list returns its id and reference (O7)."""
+    created = {
+        "id": 18749663,
+        "status": "pending",
+        "amount": 10000,
+        "transaction": {"id": 6674023666, "reference": "HV-PROBE-T5", "amount": 10000},
+    }
+    listed = [
+        {"id": 18749663, "status": "processed", "amount": 10000, "transaction": 6674023666,
+         "transaction_reference": "HV-PROBE-T5"},
+    ]  # fmt: skip
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            assert json.loads(request.content) == {"transaction": "HV-PROBE-T5", "amount": 10000}
+            return httpx.Response(200, json={"status": True, "data": created})
+        assert request.url.params["transaction"] == "6674023666"
+        meta = {"total": 1, "page": 1, "pageCount": 1}
+        return httpx.Response(200, json={"status": True, "data": listed, "meta": meta})
+
+    client = _client(handler)
+    refund = asyncio.run(client.refund("HV-PROBE-T5", 10000))
+    page = asyncio.run(
+        client.list_refunds(
+            transaction_id=6674023666, since=date(2026, 10, 18), until=date(2026, 10, 20), page=1, per_page=50
+        )
+    )
+
+    assert (refund.id, refund.status, refund.transaction_reference, refund.transaction_id) == (
+        18749663,
+        "pending",
+        "HV-PROBE-T5",
+        6674023666,
+    )
+    assert page.page_count == 1
+    [item] = page.items
+    assert (item.status, item.transaction_reference, item.transaction_id) == (
+        "processed",
+        "HV-PROBE-T5",
+        6674023666,
+    )

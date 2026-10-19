@@ -1,7 +1,7 @@
 """Payments, billing and the Paystack webhook (api-contracts.md §3, Payments and billing)."""
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -13,7 +13,8 @@ from app.core.deps import (
     IdempotencyDep,
     PaymentServiceDep,
 )
-from app.core.idempotent import run_once
+from app.core.errors import HoldExpired, IllegalTransition
+from app.core.idempotent import fresh_replay, run_once
 from app.core.pagination import Page, PageParams, page_params
 from app.modules.payments.schemas import BillingSubscription, PaymentOut, PaymentVerification
 from app.modules.placements.schemas import CheckoutOut
@@ -46,13 +47,24 @@ async def pay(
     idempotency: IdempotencyDep,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> JSONResponse:
-    """Resume the checkout for an unpaid hold (the same Paystack transaction, never a second one)."""
+    """Resume the checkout for an unpaid hold (the same Paystack transaction, never a second one). 409
+    HOLD_EXPIRED once the hold has expired; a replayed key is checked the same way (ADR 0017)."""
 
     async def act() -> CheckoutOut:
         checkout = await payments.resume_checkout(user, placement_id)
         return CheckoutOut(authorization_url=checkout.authorization_url, reference=checkout.reference)
 
-    return await run_once(idempotency, user, "pay", idempotency_key, status.HTTP_200_OK, act)
+    async def replay(body: dict[str, Any]) -> JSONResponse | None:
+        decision = await payments.replay_decision(user, placement_id, body.get("reference"))
+        if decision == "current":
+            return await fresh_replay(status.HTTP_200_OK, act)
+        if decision == "paid":
+            raise IllegalTransition("Nothing to pay.", details={"placement_id": str(placement_id)})
+        if decision == "expired":
+            raise HoldExpired(details={"placement_id": str(placement_id)})
+        return None
+
+    return await run_once(idempotency, user, "pay", idempotency_key, status.HTTP_200_OK, act, replay)
 
 
 @router.get("/billing/subscription")

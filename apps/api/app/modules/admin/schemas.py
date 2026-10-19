@@ -15,7 +15,19 @@ from app.modules.verification.schemas import ItemOut, KindName
 from app.modules.workers.schemas import AdminWorkerOut
 
 AgencyAction = Literal["approve", "reject", "suspend", "reinstate"]
-AuditEntity = Literal["agency", "worker", "placement", "document"]
+AuditEntity = Literal["agency", "worker", "placement", "document", "alert"]
+AlertKindName = Literal[
+    "checkout_unresolved",
+    "unmatched_charge",
+    "refund_attention",
+    "refund_stuck",
+    "refund_admin_review",
+    "late_payment",
+    "duplicate_charge",
+    "settlement_failed",
+    "legacy_unresolved",
+]
+AlertStateName = Literal["open", "acknowledged", "resolved"]
 
 
 class Actor(BaseModel):
@@ -102,6 +114,7 @@ class AdminOverview(BaseModel):
     placements_active: int
     trials_ending_soon: int = Field(description="Trials ending within the next 3 days")
     fees_paid_this_month_kobo: int = Field(description="Placement fees paid this calendar month (WAT)")
+    open_alerts: int = Field(default=0, description="Unresolved payment and refund alerts (ADR 0017)")
     pending_agencies: list[AdminAgencySummary]
     recent_audit: list[AuditEntry]
 
@@ -117,3 +130,32 @@ class FlagIn(BaseModel):
 
 class AdminWorkerDetail(AdminWorkerOut):
     checks: list[ItemOut]
+
+
+class AlertOut(BaseModel):
+    """A persistent admin alert (ADR 0017 section F). `acknowledged` is still unresolved."""
+
+    id: uuid.UUID
+    kind: AlertKindName
+    state: AlertStateName
+    subject_key: str
+    payment_id: uuid.UUID | None
+    payment_reference: str | None
+    details: dict[str, Any]
+    opened_at: datetime
+    acknowledged_at: datetime | None
+    acknowledged_by: str | None
+    resolved_at: datetime | None
+    resolved_by: str | None = Field(
+        description="The admin's name; 'System' when provider evidence resolved it"
+    )
+    resolution_note: str | None
+
+
+class AlertResolveIn(BaseModel):
+    note: Reason
+    paystack_refund_id: int | None = Field(
+        default=None,
+        gt=0,
+        description="A refund found or made in the Paystack dashboard, to track to processed",
+    )

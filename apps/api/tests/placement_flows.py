@@ -93,8 +93,8 @@ def mark_paid(placement_id: str) -> None:
     (test_paystack_webhook.py covers the real path, through the signed webhook)."""
     run_async(_start_trial(uuid.UUID(placement_id)))
     run_sql(
-        "UPDATE payments SET status = 'success', paid_at = now() "
-        "WHERE placement_id = :p AND status = 'pending'",
+        "UPDATE payments SET status = 'succeeded', paid_at = now() "
+        "WHERE placement_id = :p AND status = 'open'",
         p=uuid.UUID(placement_id),
     )
 

@@ -14,7 +14,7 @@ from app.modules.families.models import Family
 from app.modules.notifications.messages import Message
 from app.modules.notifications.models import Notification
 from app.modules.placements.models import Placement
-from app.modules.users.models import AccountStatus, User
+from app.modules.users.models import AccountStatus, User, UserRole
 from app.modules.workers.models import Worker
 
 # Set on a session that wrote notifications; `app.core.deps.get_db` then wakes the dispatcher.
@@ -81,6 +81,14 @@ class NotificationRepository:
             select(AgencyMember.user_id)
             .where(AgencyMember.agency_id == agency_id)
             .order_by(AgencyMember.created_at)
+        )
+        return list(rows)
+
+    async def super_admin_ids(self) -> list[uuid.UUID]:
+        rows = await self.session.scalars(
+            select(User.id)
+            .where(User.role == UserRole.super_admin, User.status == AccountStatus.active)
+            .order_by(User.created_at)
         )
         return list(rows)
 

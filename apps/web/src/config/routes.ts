@@ -62,6 +62,7 @@ export const routes = {
     placements: "/admin/placements",
     placement: (id: string) => `/admin/placements/${id}`,
     audit: "/admin/audit-log",
+    alerts: "/admin/alerts",
   },
 } as const;
 

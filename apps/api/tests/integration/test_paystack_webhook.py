@@ -73,7 +73,7 @@ def test_a_paid_checkout_starts_the_trial(api: TestClient, paystack: FakePaystac
     assert response.status_code == 200
     assert placement_status(flow.placement_id) == "trial"
     status, paid_at, _ = payment(reference)
-    assert status == "success"
+    assert status == "succeeded"
     assert paid_at is not None
     detail = api.get(f"{API}/placements/{flow.placement_id}", headers=flow.family).json()
     assert detail["events"][-1]["actor"] == "system"
@@ -118,7 +118,7 @@ def test_value_is_granted_only_after_paystack_confirms(api: TestClient, paystack
 
     assert response.status_code == 200
     assert placement_status(flow.placement_id) == "pending_payment"
-    assert payment(reference)[0] == "pending"
+    assert payment(reference)[0] == "open"
 
 
 def test_an_amount_mismatch_changes_nothing(api: TestClient, paystack: FakePaystack) -> None:
@@ -129,7 +129,7 @@ def test_an_amount_mismatch_changes_nothing(api: TestClient, paystack: FakePayst
     send(api, charge_success(reference, amount_kobo=2_000_000))
 
     assert placement_status(flow.placement_id) == "pending_payment"
-    assert payment(reference)[0] == "pending"
+    assert payment(reference)[0] == "open"
 
 
 def test_paying_after_the_hold_lapsed_and_the_worker_was_taken_is_refunded(
@@ -153,9 +153,13 @@ def test_paying_after_the_hold_lapsed_and_the_worker_was_taken_is_refunded(
     assert response.status_code == 200
     assert placement_status(slow_placement) == "cancelled"
     status, _, refunded_at = payment(slow_reference)
-    assert status == "refunded"
-    assert refunded_at is not None
+    assert status == "refund_due"  # the refund is requested, not yet confirmed `processed` (ADR 0017)
+    assert refunded_at is None
     assert paystack.refunds == [slow_reference]
+    [(refund,)] = run_sql("SELECT status::text FROM payment_refunds")
+    assert refund == "pending"
+    [(alert,)] = run_sql("SELECT kind FROM admin_alerts WHERE resolved_at IS NULL")
+    assert alert == "late_payment"
     active = run_sql(
         "SELECT count(*) FROM placements "
         "WHERE worker_id = :w AND status IN ('pending_payment', 'trial', 'confirmed')",

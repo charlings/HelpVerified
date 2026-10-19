@@ -43,6 +43,7 @@ ID = uuid.UUID("9d0c1c9e-5f7e-4d43-9b1b-8f2b6f3f3a10")
         messages.AGENCY_WORKER,
         messages.AGENCY_PLACEMENT,
         messages.AGENCY_BILLING,
+        messages.ADMIN_ALERTS,
     ],
 )
 def test_links_point_at_web_routes(path: str) -> None:
@@ -295,6 +296,8 @@ def test_job_names_are_unique_and_complete() -> None:
         "subscription_sync",
         "notification_retry",
         "refund_retry",
+        "reconcile_checkouts",  # ADR 0017
+        "watch_checkouts",
         "document_retention",
     }
 

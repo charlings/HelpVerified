@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 
 from tests.conftest import alembic_config, reset_app_connections, reset_sql_connections, run_sql
 
-pytestmark = pytest.mark.usefixtures("db_ready")
+# Empty tables first: migration 0008's downgrade refuses while unresolved refunds or alerts exist.
+pytestmark = pytest.mark.usefixtures("db_ready", "clean_state")
 
 TABLES = {
     "users",

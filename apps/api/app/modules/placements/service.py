@@ -37,6 +37,7 @@ from app.modules.agencies.repository import AgencyRepository
 from app.modules.families.repository import FamilyRepository
 from app.modules.notifications import messages
 from app.modules.notifications.repository import NotificationRepository
+from app.modules.payments.models import ClosedReason
 from app.modules.payments.repository import PaymentRepository
 from app.modules.placements.models import (
     EndReason,
@@ -158,6 +159,8 @@ class PlacementService:
         except PaymentProviderError as error:
             error.details |= held
             raise
+        except IllegalTransition as error:  # paid meanwhile (a sibling attempt succeeded): R3
+            raise RequestNotOpen(details={"placement_id": held["placement_id"]}) from error
 
     async def _hold_worker(
         self, user: User, family_id: uuid.UUID, request: Request, proposal: Proposal, now: datetime
@@ -455,12 +458,18 @@ class PlacementService:
         now: datetime,
     ) -> None:
         """pending_payment → cancelled; the request reopens and its proposals return to pending.
-        The unpaid checkout is marked failed: if the family pays it anyway, the payment is refunded."""
+        The unpaid checkout is closed: if the family pays it anyway, the payment is refunded (ADR 0017)."""
         placement.end_reason = end_reason
         placement.ended_at = now
         await self._move(placement, PlacementStatus.cancelled, actor_id, reason, now)
         placement.hold_expires_at = None
-        await PaymentRepository(self.session).fail_pending_fee(placement.id)
+        # AT15-AT17: no further checkout activity, but every attempt that may still be paid is watched.
+        await PaymentRepository(self.session).deactivate_attempts(
+            placement.id,
+            ClosedReason.hold_ended,
+            now + timedelta(days=self.settings.CHECKOUT_WATCH_DAYS),
+            now,
+        )
         request = await self.requests.get(placement.request_id, for_update=True)
         if request is not None and request.status is RequestStatus.matched:
             request.status = RequestStatus.open

@@ -10,6 +10,7 @@ placements keep running.
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Literal, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,8 +19,8 @@ from app.core.config import Settings
 from app.core.dates import LAGOS, lagos_date
 from app.core.errors import IllegalTransition, NotFound, ValidationFailed
 from app.core.pagination import PageParams
-from app.modules.admin.models import AuditAction
-from app.modules.admin.repository import AuditRepository
+from app.modules.admin.models import AdminAlert, AuditAction
+from app.modules.admin.repository import AlertRepository, AuditRepository
 from app.modules.admin.schemas import (
     AdminAgencyDetail,
     AdminAgencySummary,
@@ -27,6 +28,8 @@ from app.modules.admin.schemas import (
     AdminWorkerDetail,
     AgencyAction,
     AgencyAdmin,
+    AlertKindName,
+    AlertOut,
     AuditEntry,
 )
 from app.modules.agencies.models import Agency, AgencyStatus, WorkerRole
@@ -84,6 +87,7 @@ class AdminService:
         self.workers = WorkerRepository(session)
         self.checks = VerificationRepository(session)
         self.audit = AuditRepository(session)
+        self.alerts = AlertRepository(session)
         self.placements = PlacementRepository(session)
         self.requests = RequestRepository(session)
         self.notices = NotificationRepository(session)
@@ -103,6 +107,7 @@ class AdminService:
                 placements_active=await self.placements.count_active(),
                 trials_ending_soon=len(await self.placements.trials_ending(soon)),
                 fees_paid_this_month_kobo=await PaymentRepository(self.session).fees_paid_since(month_start),
+                open_alerts=await self.alerts.open_count(),
                 pending_agencies=[AdminAgencySummary.of(a, totals[a.id]["total"]) for a in pending],
                 recent_audit=[AuditEntry.of(entry, actor) for entry, actor in recent],
             )
@@ -239,3 +244,83 @@ class AdminService:
         async with self.session.begin():
             rows, total = await self.audit.page(params, action)
         return [AuditEntry.of(entry, actor) for entry, actor in rows], total
+
+    # Alerts (ADR 0017 section F, OD4): view, acknowledge, resolve with a note. Acknowledging never resolves.
+
+    async def alerts_page(
+        self, params: PageParams, state: Literal["open", "resolved", "all"]
+    ) -> tuple[list[AlertOut], int]:
+        async with self.session.begin():
+            rows, total = await self.alerts.page(params, state)
+            return [await self._alert_out(alert) for alert in rows], total
+
+    async def acknowledge_alert(self, user: User, alert_id: uuid.UUID) -> AlertOut:
+        async with self.session.begin():
+            alert = await self.alerts.get(alert_id, for_update=True)
+            if alert is None:
+                raise NotFound()
+            if alert.resolved_at is not None:
+                raise IllegalTransition("This alert is already resolved.")
+            if alert.acknowledged_at is None:
+                alert.acknowledged_at = utcnow()
+                alert.acknowledged_by = user.id
+                await self.audit.write(
+                    user.id, AuditAction.alert_acknowledged, "alert", alert.id, {"label": alert.kind}
+                )
+            return await self._alert_out(alert)
+
+    async def resolve_alert(self, user: User, alert_id: uuid.UUID, note: str) -> AlertOut:
+        async with self.session.begin():
+            alert = await self.alerts.get(alert_id, for_update=True)
+            if alert is None:
+                raise NotFound()
+            if alert.resolved_at is not None:
+                raise IllegalTransition("This alert is already resolved.")
+            now = utcnow()
+            alert.acknowledged_at = alert.acknowledged_at or now
+            alert.acknowledged_by = alert.acknowledged_by or user.id
+            alert.resolved_at = now
+            alert.resolved_by = user.id
+            alert.resolution_note = note
+            await self.audit.write(
+                user.id, AuditAction.alert_resolved, "alert", alert.id, {"label": alert.kind, "reason": note}
+            )
+            return await self._alert_out(alert)
+
+    async def alert_payment(self, alert_id: uuid.UUID) -> uuid.UUID | None:
+        async with self.session.begin():
+            alert = await self.alerts.get(alert_id)
+            if alert is None:
+                raise NotFound()
+            return alert.payment_id
+
+    async def _alert_out(self, alert: AdminAlert) -> AlertOut:
+        payment = await PaymentRepository(self.session).get(alert.payment_id) if alert.payment_id else None
+        names = {
+            uid: (await self.session.get(User, uid))
+            for uid in (alert.acknowledged_by, alert.resolved_by)
+            if uid is not None
+        }
+
+        def name(uid: uuid.UUID | None) -> str | None:
+            user = names.get(uid) if uid else None
+            return user.full_name if user else None
+
+        state: Literal["open", "acknowledged", "resolved"] = (
+            "resolved" if alert.resolved_at else "acknowledged" if alert.acknowledged_at else "open"
+        )
+        return AlertOut(
+            id=alert.id,
+            kind=cast(AlertKindName, alert.kind),
+            state=state,
+            subject_key=alert.subject_key,
+            payment_id=alert.payment_id,
+            payment_reference=payment.paystack_reference if payment else None,
+            details=alert.details or {},
+            opened_at=alert.opened_at,
+            acknowledged_at=alert.acknowledged_at,
+            acknowledged_by=name(alert.acknowledged_by),
+            resolved_at=alert.resolved_at,
+            resolved_by=(name(alert.resolved_by) or "System") if alert.resolved_at else None,
+            resolution_note=alert.resolution_note,
+        )

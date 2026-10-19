@@ -99,6 +99,33 @@ class AlreadyProposed(Conflict):
     code, default_message = "ALREADY_PROPOSED", "This worker is already proposed for this request."
 
 
+class HoldExpired(Conflict):
+    """The placement's hold ended unpaid; the family must accept again (ADR 0017, OD2)."""
+
+    code, default_message = (
+        "HOLD_EXPIRED",
+        "The hold on this worker has expired. Accept again to place a new hold.",
+    )
+
+
+class CheckoutInProgress(Conflict):
+    """Another request is preparing this placement's checkout (ADR 0017, X3). Not a provider failure."""
+
+    code, default_message = (
+        "CHECKOUT_IN_PROGRESS",
+        "A checkout for this placement is already being prepared. Try again in a moment.",
+    )
+
+
+class CheckoutAttemptsExhausted(Conflict):
+    """The hold has used its payment attempts (ADR 0017, X2; the cap is a proposed default)."""
+
+    code, default_message = (
+        "CHECKOUT_ATTEMPTS_EXHAUSTED",
+        "This hold has reached its limit of payment attempts. Cancel it or let it lapse, then accept again.",
+    )
+
+
 class TokenExpired(DomainError):
     code, status, default_message = "TOKEN_EXPIRED", 410, "This link has expired or has already been used."
 
@@ -138,10 +165,28 @@ class PaymentProviderUnavailable(PaymentProviderError):
 
 
 class PaymentProviderRejected(PaymentProviderError):
-    """Paystack answered and refused the request: retrying the same request won't help."""
+    """Paystack answered and refused the request: retrying the same request won't help.
+
+    `provider_code` is Paystack's machine-readable `code` (for example `duplicate_reference`,
+    `transaction_not_found`, `transaction_reversed`); services branch on it (ADR 0017, OD9 item 1). It is
+    never put in `details`, so it never reaches a client."""
 
     default_message = "The payment provider declined this payment request."
     reason = "rejected"
+
+    def __init__(
+        self,
+        message: str | None = None,
+        details: dict[str, Any] | None = None,
+        provider_code: str | None = None,
+    ) -> None:
+        super().__init__(message, details)
+        self.provider_code = provider_code
+
+
+class TransactionNotFound(PaymentProviderRejected):
+    """Paystack has no transaction for the reference: documented as HTTP 404 (D10), observed in test mode as
+    HTTP 400 `transaction_not_found` (O4). Never proof that one won't exist later."""
 
 
 class InternalError(DomainError):

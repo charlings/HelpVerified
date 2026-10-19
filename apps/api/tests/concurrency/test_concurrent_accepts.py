@@ -125,8 +125,9 @@ RETRIES = 5
 
 
 def test_concurrent_retries_of_one_accept_open_one_checkout() -> None:
-    """A family double-clicks (or its client retries) while Paystack is slow: every request gets the same
-    placement and checkout, and Paystack is asked once (ADR 0017)."""
+    """A family double-clicks (or its client retries) while Paystack is slow. No lock is held during the
+    Paystack call (ADR 0017), so the retries that arrive meanwhile get CHECKOUT_IN_PROGRESS instead of
+    waiting; Paystack is asked once and there is one attempt, one placement, one checkout."""
     family = create_family()
     proposal = create_proposal(create_request(family), listed_worker(create_agency()))
     paystack = FakePaystack()
@@ -134,15 +135,16 @@ def test_concurrent_retries_of_one_accept_open_one_checkout() -> None:
 
     results = run_async(_same_accept_many_times(family_user(family), proposal, paystack))
 
-    assert len(set(results)) == 1  # one reference for everyone
-    assert results[0].startswith("HV-PF-")
+    references = {r for r in results if r.startswith("HV-PF-")}
+    assert len(references) == 1  # whoever got a link got the same one
+    assert set(results) - references <= {"CHECKOUT_IN_PROGRESS"}  # the rest arrived mid-call
     assert paystack.initialize_calls == 1
     [(placements,)] = run_sql("SELECT count(*) FROM placements")
     assert placements == 1
-    assert [s for (s,) in run_sql("SELECT status::text FROM payments")] == ["pending"]
+    assert [s for (s,) in run_sql("SELECT status::text FROM payments")] == ["open"]
 
 
-def test_concurrent_retries_while_paystack_refuses_leave_one_hold_and_no_payment() -> None:
+def test_concurrent_retries_while_paystack_refuses_leave_one_hold_and_no_payable_attempt() -> None:
     family = create_family()
     worker = listed_worker(create_agency())
     proposal = create_proposal(create_request(family), worker)
@@ -152,12 +154,15 @@ def test_concurrent_retries_while_paystack_refuses_leave_one_hold_and_no_payment
 
     results = run_async(_same_accept_many_times(family_user(family), proposal, paystack))
 
-    assert set(results) == {"PAYMENT_PROVIDER_ERROR"}  # never a 500, never a second placement
+    # Never a 500 and never a second placement; later presses may hit the attempt cap.
+    assert set(results) <= {"PAYMENT_PROVIDER_ERROR", "CHECKOUT_IN_PROGRESS", "CHECKOUT_ATTEMPTS_EXHAUSTED"}
+    assert "PAYMENT_PROVIDER_ERROR" in results
     [(status, held_worker)] = run_sql("SELECT status::text, worker_id FROM placements")
     assert status == "pending_payment"
     assert str(held_worker) == str(worker)
-    [(payments,)] = run_sql("SELECT count(*) FROM payments")
-    assert payments == 0  # every failed attempt rolled back its payment row
+    attempts = [s for (s,) in run_sql("SELECT status::text FROM payments")]
+    assert 1 <= len(attempts) <= 3  # the attempt cap holds under concurrency
+    assert set(attempts) == {"rejected"}  # each refusal confirmed with its own reference; none payable
 
 
 async def _insert_second(placement: Placement) -> None:

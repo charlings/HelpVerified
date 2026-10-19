@@ -79,6 +79,16 @@ async def refund_retry(ctx: JobContext) -> int:
         return await _payments(session, ctx).retry_refunds()
 
 
+async def reconcile_checkouts(ctx: JobContext) -> int:
+    async with ctx.sessionmaker() as session:
+        return await _payments(session, ctx).reconcile_checkouts()
+
+
+async def watch_checkouts(ctx: JobContext) -> int:
+    async with ctx.sessionmaker() as session:
+        return await _payments(session, ctx).watch_checkouts()
+
+
 async def document_retention(ctx: JobContext) -> int:
     async with ctx.sessionmaker() as session:
         service = _verification(session, ctx)
@@ -99,7 +109,11 @@ JOBS: tuple[Job, ...] = (
     Job("notification_retry", {"trigger": "interval", "minutes": 1}, notification_retry, 55,
         "Deliver notifications whose mirror or email failed"),
     Job("refund_retry", {"trigger": "interval", "minutes": 15}, refund_retry, 600,
-        "Retry refunds Paystack hasn't accepted yet"),
+        "Advance refunds: submit, reconcile uncertain ones, track them to processed (ADR 0017)"),
+    Job("reconcile_checkouts", {"trigger": "interval", "minutes": 1}, reconcile_checkouts, 55,
+        "Resolve checkouts whose Paystack outcome is unknown (ADR 0017)"),
+    Job("watch_checkouts", {"trigger": "interval", "minutes": 15}, watch_checkouts, 600,
+        "Check inactive checkouts for late payments until their watch window ends (ADR 0017)"),
     Job("document_retention", {"trigger": "cron", "hour": 3, "minute": 0}, document_retention, 1800,
         "Delete evidence past its retention period and destroy deleted files in Cloudinary"),
 )  # fmt: skip

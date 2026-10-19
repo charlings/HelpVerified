@@ -4,19 +4,19 @@ import asyncio
 import base64
 import hashlib
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 
-from app.core.errors import PaymentProviderRejected, PaymentProviderUnavailable
+from app.core.errors import PaymentProviderRejected, PaymentProviderUnavailable, TransactionNotFound
 from app.integrations.cloudinary import Asset, SignedUpload, sign
 from app.integrations.email import EmailMessage
 from app.integrations.firestore import MirroredNotification, MirrorError
 from app.integrations.google import GoogleAuthError, GoogleIdentity
 from app.integrations.payments import Checkout
-from app.integrations.paystack import Initialized, RemoteSubscription, Verified
+from app.integrations.paystack import Initialized, RefundPage, RemoteRefund, RemoteSubscription, Verified
 
 FAKE_DOWNLOAD_HOST = "https://fake-cloudinary.test"
 FAKE_GOOGLE_AUTHORIZE = "https://accounts.google.test/auth"
@@ -102,31 +102,52 @@ class MemoryEmailSender:
 
 
 class FakePaystack:
-    """Paystack in memory: checkouts, the customer paying, verify, refunds and subscriptions."""
+    """Paystack in memory: checkouts, the customer paying, verify, refunds and subscriptions.
+
+    It behaves as observed in test mode (ADR 0017, O1-O8): a reused reference is refused with
+    `duplicate_reference` and no link; an unknown reference is `transaction_not_found`; a new checkout reads
+    `abandoned`; a refund is `pending` until processed, the transaction `reversal-pending` meanwhile, then
+    `reversed`; a refund that would take the total past the amount is refused with `transaction_reversed`."""
 
     def __init__(self) -> None:
         self.transactions: dict[str, dict[str, Any]] = {}
-        self.refunds: list[str] = []
+        self.refunds: list[str] = []  # references whose refund Paystack accepted, in order
+        self.refund_records: dict[int, dict[str, Any]] = {}
         self.subscriptions: dict[str, RemoteSubscription] = {}
         self.down = False  # True: every call fails as unreachable
-        self.refuse_refunds = False  # only refunds fail (verify still works)
+        self.refuse_refunds = False  # only refunds fail, as a definite refusal (verify still works)
         self.reject_checkouts = False  # True: initialize is refused, as for an email Paystack won't take
         self.initialize_delay = 0.0  # seconds: keeps a checkout in flight for the concurrency tests
         self.initialize_calls = 0
+        self.refund_calls = 0
+        # Ambiguous outcomes: Paystack does the work, then the reply is lost (a timeout on our side).
+        self.lose_initialize_replies = 0
+        self.lose_refund_replies = 0
+        self.refund_unreachable = False  # refund requests never reach Paystack (nothing is created)
+        self._next_id = 1000
 
     def reset(self) -> None:
         self.transactions.clear()
         self.refunds.clear()
+        self.refund_records.clear()
         self.subscriptions.clear()
         self.down = False
         self.refuse_refunds = False
         self.reject_checkouts = False
         self.initialize_delay = 0.0
         self.initialize_calls = 0
+        self.refund_calls = 0
+        self.lose_initialize_replies = 0
+        self.lose_refund_replies = 0
+        self.refund_unreachable = False
 
     def _check(self) -> None:
         if self.down:
             raise PaymentProviderUnavailable()
+
+    def _id(self) -> int:
+        self._next_id += 1
+        return self._next_id
 
     async def initialize(
         self,
@@ -136,25 +157,31 @@ class FakePaystack:
         callback_url: str,
         metadata: dict[str, Any],
         plan: str | None = None,
+        channels: list[str] | None = None,
     ) -> Initialized:
         self.initialize_calls += 1
         if self.initialize_delay:
             await asyncio.sleep(self.initialize_delay)
         self._check()
         if self.reject_checkouts:
-            raise PaymentProviderRejected()
+            raise PaymentProviderRejected(provider_code="invalid_params")
         if reference in self.transactions:
-            raise PaymentProviderRejected()  # Paystack refuses a duplicate reference
+            raise PaymentProviderRejected(provider_code="duplicate_reference")  # O1: no link
         self.transactions[reference] = {
+            "id": self._id(),
             "email": email,
             "amount": amount_kobo,
             "currency": "NGN",
-            "status": "abandoned",
+            "status": "abandoned",  # O2: also the initial state
             "callback_url": callback_url,
             "metadata": metadata,
             "plan": plan,
+            "channels": channels,
             "paid_at": None,
         }
+        if self.lose_initialize_replies:
+            self.lose_initialize_replies -= 1
+            raise PaymentProviderUnavailable()  # created at Paystack, but our call timed out
         return Initialized(f"https://checkout.paystack.test/{reference}", f"ac_{reference}", reference)
 
     def pay(self, reference: str, *, amount_kobo: int | None = None, currency: str = "NGN") -> None:
@@ -164,18 +191,70 @@ class FakePaystack:
         if amount_kobo is not None:
             txn["amount"] = amount_kobo
 
+    def decline(self, reference: str) -> None:
+        self.transactions[reference]["status"] = "failed"
+
     async def verify(self, reference: str) -> Verified:
         self._check()
         txn = self.transactions.get(reference)
         if txn is None:
-            raise PaymentProviderRejected()  # "Transaction reference not found"
-        return Verified(reference, txn["status"], txn["amount"], txn["currency"], txn["paid_at"])
+            raise TransactionNotFound(provider_code="transaction_not_found")  # O4
+        return Verified(reference, txn["status"], txn["amount"], txn["currency"], txn["paid_at"], txn["id"])
 
-    async def refund(self, reference: str) -> None:
+    async def refund(self, reference: str, amount_kobo: int) -> RemoteRefund:
+        self.refund_calls += 1
         self._check()
+        if self.refund_unreachable:
+            raise PaymentProviderUnavailable()
         if self.refuse_refunds:
-            raise PaymentProviderRejected()
+            raise PaymentProviderRejected(provider_code="declined")
+        txn = self.transactions.get(reference)
+        if txn is None or txn["status"] not in ("success", "reversal-pending", "reversed"):
+            raise PaymentProviderRejected(provider_code="declined")  # "This transaction failed" (O7)
+        committed = sum(r["amount"] for r in self.refund_records.values() if r["reference"] == reference)
+        if committed + amount_kobo > txn["amount"]:
+            raise PaymentProviderRejected(provider_code="transaction_reversed")  # O6
+        refund_id = self._id()
+        self.refund_records[refund_id] = {"reference": reference, "amount": amount_kobo, "status": "pending"}
         self.refunds.append(reference)
+        txn["status"] = "reversal-pending"  # O5
+        if self.lose_refund_replies:
+            self.lose_refund_replies -= 1
+            raise PaymentProviderUnavailable()  # accepted, but the reply was lost
+        return self._remote(refund_id)
+
+    def set_refund(self, refund_id: int, status: str) -> None:
+        """Paystack moves a refund on: processing, needs-attention, failed or processed."""
+        record = self.refund_records[refund_id]
+        record["status"] = status
+        if status == "processed":
+            self.transactions[record["reference"]]["status"] = "reversed"
+
+    def refund_id_for(self, reference: str) -> int:
+        [refund_id] = [i for i, r in self.refund_records.items() if r["reference"] == reference]
+        return refund_id
+
+    def _remote(self, refund_id: int) -> RemoteRefund:
+        record = self.refund_records[refund_id]
+        txn = self.transactions[record["reference"]]
+        return RemoteRefund(refund_id, record["status"], record["amount"], record["reference"], txn["id"])
+
+    async def fetch_refund(self, refund_id: int) -> RemoteRefund:
+        self._check()
+        if refund_id not in self.refund_records:
+            raise PaymentProviderRejected(provider_code="not_found")
+        return self._remote(refund_id)
+
+    async def list_refunds(
+        self, *, transaction_id: int | None, since: date, until: date, page: int, per_page: int
+    ) -> RefundPage:
+        self._check()
+        items = [self._remote(i) for i in sorted(self.refund_records)]
+        if transaction_id is not None:
+            items = [r for r in items if r.transaction_id == transaction_id]
+        pages = max(1, -(-len(items) // per_page)) if items else 0
+        start = (page - 1) * per_page
+        return RefundPage(items[start : start + per_page], pages)
 
     async def fetch_subscription(self, code: str) -> RemoteSubscription:
         self._check()

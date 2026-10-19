@@ -470,11 +470,12 @@ class Seeder:
 
     async def payments_and_audit(self) -> None:
         fee = self.settings.PLACEMENT_FEE_KOBO
-        for key, placement, payer, days, status in (
-            ("pf-blessing", "p-blessing", "u-family", -12, PaymentStatus.success),
-            ("pf-chinedu", "p-chinedu", "u-bola", -35, PaymentStatus.success),
-            ("pf-grace", "p-grace", "u-bola", 0, PaymentStatus.pending),  # no checkout yet: Pay opens one
-            ("pf-musa", "p-musa", "u-family", -211, PaymentStatus.success),
+        # Grace's hold has no checkout attempt yet: "Pay" opens one (ADR 0017). The web mock lists a pending
+        # payment for it instead; an attempt with no Paystack transaction would only be reconciled forever.
+        for key, placement, payer, days in (
+            ("pf-blessing", "p-blessing", "u-family", -12),
+            ("pf-chinedu", "p-chinedu", "u-bola", -35),
+            ("pf-musa", "p-musa", "u-family", -211),
         ):
             self.add(
                 Payment(
@@ -484,8 +485,9 @@ class Seeder:
                     placement_id=seed_id(placement),
                     amount_kobo=fee,
                     paystack_reference=f"HV-SEED-{key.upper()}",
-                    status=status,
-                    paid_at=self.at(days) if status is PaymentStatus.success else None,
+                    status=PaymentStatus.succeeded,
+                    attempt_no=1,
+                    paid_at=self.at(days),
                     created_at=self.at(days),
                 )
             )
@@ -498,7 +500,7 @@ class Seeder:
                     agency_id=seed_id("a-sunrise"),
                     amount_kobo=self.settings.AGENCY_SUBSCRIPTION_KOBO,
                     paystack_reference=f"HV-SEED-SUB-SUNRISE-{n}",
-                    status=PaymentStatus.success,
+                    status=PaymentStatus.success,  # subscriptions keep pending / success / failed
                     paid_at=self.at(days),
                     created_at=self.at(days),
                 )

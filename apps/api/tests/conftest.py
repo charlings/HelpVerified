@@ -68,6 +68,8 @@ ALEMBIC_INI = Path(__file__).parents[1] / "alembic.ini"
 TABLES = (
     "notifications",
     "webhook_events",
+    "admin_alerts",
+    "payment_refunds",
     "payments",
     "replacement_requests",
     "placement_events",

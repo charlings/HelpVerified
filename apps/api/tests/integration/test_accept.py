@@ -38,7 +38,7 @@ def test_accept_holds_the_worker_and_returns_a_checkout(api: TestClient, paystac
     assert txn["callback_url"] == "http://localhost:3000/family/payments/callback"
     assert txn["metadata"]["placement_id"] == placement["id"]
     [(status, amount)] = run_sql("SELECT status::text, amount_kobo FROM payments")
-    assert (status, amount) == ("pending", 2_000_000)
+    assert (status, amount) == ("open", 2_000_000)
     statuses = {row[0]: row[1] for row in run_sql("SELECT id::text, status::text FROM proposals")}
     assert statuses == {chosen: "accepted", other: "superseded"}
     assert api.get(f"{API}/requests/{request_id}", headers=fam).json()["status"] == "matched"
@@ -203,10 +203,12 @@ def _failed_accept(
     assert error["code"] == "PAYMENT_PROVIDER_ERROR"
     assert error["details"]["placement_id"] == placement_id  # the client knows which hold to resume
     assert datetime.fromisoformat(error["details"]["hold_expires_at"]) == expires
-    [(payments,)] = run_sql("SELECT count(*) FROM payments")
-    assert payments == 0  # the failed attempt left no payment row behind
+    # The attempt is kept (ADR 0017): a confirmed refusal is `rejected`; an unreachable Paystack leaves the
+    # outcome `unknown`, to be reconciled with the same reference, never a fresh one.
+    [(attempt,)] = run_sql("SELECT status::text FROM payments")
+    assert attempt == ("rejected" if rejected else "unknown")
     paystack.down = paystack.reject_checkouts = False
-    return fam, proposal, placement_id
+    return fam, proposal, str(placement_id)
 
 
 def test_paystack_down_is_reported_as_unavailable(api: TestClient, paystack: FakePaystack) -> None:
@@ -253,7 +255,8 @@ def test_accept_again_after_a_failed_checkout_resumes_the_hold(
     assert len(paystack.transactions) == 1
     [(placements,)] = run_sql("SELECT count(*) FROM placements")
     assert placements == 1
-    assert [s for (s,) in run_sql("SELECT status::text FROM payments")] == ["pending"]
+    # The unknown attempt was reconciled with the same reference (Paystack had never received it).
+    assert [s for (s,) in run_sql("SELECT status::text FROM payments")] == ["open"]
 
 
 def test_the_same_idempotency_key_retries_a_failed_accept(api: TestClient, paystack: FakePaystack) -> None:
@@ -332,5 +335,5 @@ def test_accept_after_the_own_hold_lapsed_starts_a_fresh_hold(
 
     assert retry.status_code == 201  # not REQUEST_NOT_OPEN while waiting for the job
     assert retry.json()["placement"]["id"] != placement_id
-    statuses = dict(run_sql("SELECT id::text, status::text FROM placements"))
+    statuses = {str(p): str(s) for p, s in run_sql("SELECT id::text, status::text FROM placements")}
     assert statuses == {placement_id: "cancelled", retry.json()["placement"]["id"]: "pending_payment"}

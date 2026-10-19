@@ -2,7 +2,7 @@
 as the web mock does: families see their own requests, agencies the open ones that match them."""
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, status
 from fastapi.responses import JSONResponse
@@ -13,11 +13,12 @@ from app.core.deps import (
     CurrentUser,
     FamilyUser,
     IdempotencyDep,
+    PaymentServiceDep,
     PlacementServiceDep,
     RequestServiceDep,
 )
-from app.core.errors import Forbidden
-from app.core.idempotent import run_once
+from app.core.errors import Forbidden, HoldExpired, RequestNotOpen
+from app.core.idempotent import fresh_replay, run_once
 from app.core.pagination import Page, PageParams, page_params
 from app.modules.placements.schemas import AcceptOut, CheckoutOut
 from app.modules.requests.schemas import (
@@ -107,11 +108,14 @@ async def accept(
     proposal_id: uuid.UUID,
     user: FamilyUser,
     placements: PlacementServiceDep,
+    payments: PaymentServiceDep,
     idempotency: IdempotencyDep,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> JSONResponse:
     """Creates the placement and holds the worker (rule 2). Returns the checkout link, or `payment: null`
-    when a free replacement waives the fee. Send an `Idempotency-Key` so a retry can't act twice."""
+    when a free replacement waives the fee. Send a new `Idempotency-Key` for each press of "Accept" and reuse
+    it only for automatic retries: a replay is checked first, so an expired hold is 409 HOLD_EXPIRED and a
+    paid one 409 REQUEST_NOT_OPEN, never a stale checkout link (ADR 0017)."""
 
     async def act() -> AcceptOut:
         accepted = await placements.accept(user, proposal_id)
@@ -123,7 +127,20 @@ async def accept(
             else None,
         )
 
-    return await run_once(idempotency, user, "accept", idempotency_key, status.HTTP_201_CREATED, act)
+    async def replay(body: dict[str, Any]) -> JSONResponse | None:
+        if not body.get("payment"):
+            return None  # a free replacement: already a finished trial
+        placement_id = uuid.UUID(body["placement"]["id"])
+        decision = await payments.replay_decision(user, placement_id, body["payment"].get("reference"))
+        if decision == "current":
+            return await fresh_replay(status.HTTP_201_CREATED, act)
+        if decision == "paid":
+            raise RequestNotOpen(details={"placement_id": str(placement_id)})
+        if decision == "expired":
+            raise HoldExpired(details={"placement_id": str(placement_id)})
+        return None
+
+    return await run_once(idempotency, user, "accept", idempotency_key, status.HTTP_201_CREATED, act, replay)
 
 
 @router.get("/workers/{worker_id}/public")

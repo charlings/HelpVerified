@@ -18,6 +18,7 @@ AGENCY_HOME = "/agency"
 AGENCY_WORKER = "/agency/workers/{id}"
 AGENCY_PLACEMENT = "/agency/placements/{id}"
 AGENCY_BILLING = "/agency/billing"
+ADMIN_ALERTS = "/admin/alerts"
 
 CHECK_LABELS = {
     VerificationKind.id: "ID",
@@ -167,12 +168,72 @@ def replacement_requested(placement_id: object, family_name: str, worker_name: s
 
 
 def payment_refunded(worker_name: str, amount_kobo: int) -> Message:
+    """A late payment (ADR 0017, AT12): the refund has started, not finished."""
     return Message(
         "payment_refunded",
         "Your payment is being refunded",
         f"Your payment of {naira(amount_kobo)} arrived after the hold on {worker_name} had lapsed, so it is "
         "being refunded to the card you paid with. Refunds can take a few working days to appear.",
         FAMILY_PAYMENTS,
+    )
+
+
+# TODO(content): the three messages below use ADR 0017 section I wording, awaiting owner approval.
+
+
+def duplicate_payment_refunding(worker_name: str, amount_kobo: int) -> Message:
+    """A second payment for a placement that was already paid (AT13)."""
+    return Message(
+        "duplicate_payment_refunding",
+        "We received a second payment",
+        f"We received a second payment of {naira(amount_kobo)} for your placement with {worker_name}. "
+        "It will be refunded. Refunds can take a few working days to appear.",
+        FAMILY_PAYMENTS,
+    )
+
+
+def refund_completed(amount_kobo: int) -> Message:
+    """Only when Paystack confirms the refund `processed` (AT18)."""
+    return Message(
+        "refund_completed",
+        "Refund completed",
+        f"Your refund of {naira(amount_kobo)} is complete. It can take up to 10 working days to reach your "
+        "account.",
+        FAMILY_PAYMENTS,
+    )
+
+
+def refund_needs_attention(amount_kobo: int) -> Message:
+    return Message(
+        "refund_needs_attention",
+        "Your refund needs attention",
+        f"Your refund of {naira(amount_kobo)} needs attention. Our team is handling it and will be in touch.",
+        FAMILY_PAYMENTS,
+    )
+
+
+# Admins (ADR 0017 section F)
+
+ALERT_TITLES = {
+    "checkout_unresolved": "A checkout couldn't be resolved",
+    "unmatched_charge": "A payment arrived for an unknown reference",
+    "refund_attention": "A refund needs attention",
+    "refund_stuck": "A refund hasn't finished",
+    "refund_admin_review": "A refund needs manual review",
+    "late_payment": "A payment arrived after its hold ended",
+    "duplicate_charge": "A placement was paid twice",
+    "settlement_failed": "A payment couldn't be settled",
+    "legacy_unresolved": "A payment from before the upgrade needs review",
+}
+
+
+def admin_alert(kind: str) -> Message:
+    """Names only the kind of problem; the details are in the admin console."""
+    return Message(
+        "admin_alert",
+        ALERT_TITLES.get(kind, "A payment needs attention"),
+        "Open the alert list in the admin console to review it. The alert stays open until it's resolved.",
+        ADMIN_ALERTS,
     )
 
 

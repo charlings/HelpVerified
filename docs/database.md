@@ -10,6 +10,7 @@ PostgreSQL 16. Migrations in `apps/api/app/db/migrations/versions/`, with readab
 | `0004` requests, placements | B4 | Five enums; `families`, `requests`, `proposals`, `placements`, `placement_events`, `replacement_requests`; **rule 2 index** |
 | `0005` payments | B5 | `payment_kind`, `payment_status`; `payments`, `webhook_events` |
 | `0006` notifications, jobs | B6 | `notifications`; `payments.refund_sent_at`, `refund_attempts`; `verification_documents.purged_at` |
+| `0008` checkout attempts, refunds | ADR 0017 (Proposed) | New `payment_status` values and `refund_status` enum; `payments` attempt and reconciliation columns plus `refund_committed_kobo`; `payment_refunds`, `admin_alerts`; placement transition trigger; legacy mapping; drops `refund_sent_at`, `refund_attempts` |
 
 ## Entity-relationship diagram
 
@@ -64,11 +65,14 @@ erDiagram
         bigint amount_kobo
         text paystack_reference UK
         text authorization_url "resumed by /pay"
-        payment_status status "pending | success | failed | refunded"
+        payment_status status "fees: initiating | open | unknown | rejected | failed | orphaned | closed | succeeded | refund_due | refunded; subscriptions: pending | success | failed"
+        smallint attempt_no "1 to 3 per placement"
+        text closed_reason "hold_ended | superseded | ineligible"
+        timestamptz watch_until
+        timestamptz next_reconcile_at
+        bigint refund_committed_kobo "kept by trigger; <= amount_kobo"
         timestamptz paid_at
         timestamptz refunded_at
-        timestamptz refund_sent_at "Paystack accepted the refund"
-        smallint refund_attempts
     }
     webhook_events {
         uuid id PK
@@ -229,7 +233,13 @@ erDiagram
 | One proposal per worker per request | `uq_proposals_request_id_worker_id` (a withdrawn proposal is reused when re-proposed) |
 | Trials last 7 to 30 days | `ck_requests_trial_days` |
 | A webhook event is processed once | `uq_webhook_events_provider_event_id` |
-| One open checkout per hold | Partial unique index `payments_one_pending_fee_per_placement` |
+| One active checkout attempt per placement (I4) | Partial unique index `payments_one_open_attempt_per_placement` (0008) |
+| At most one successful payment per placement (I2) | Partial unique index `payments_one_succeeded_per_placement` |
+| At most 3 checkout attempts per placement (provisional) | `ck_payments_attempt_no` + `uq_payments_placement_id_attempt_no`; a violation maps to 409 `CHECKOUT_ATTEMPTS_EXHAUSTED` |
+| Committed refunds never exceed the captured amount (I8) | Trigger `payment_refunds_track_commitment` maintains `payments.refund_committed_kobo`; `ck_payments_refund_committed` refuses an over-commit (`23514`), safe under READ COMMITTED and REPEATABLE READ (tested on PostgreSQL 16.15) |
+| One in-flight refund per payment (I9) | Partial unique index `payment_refunds_one_in_flight_per_payment` |
+| One unresolved alert per kind and subject (I10) | Partial unique index `admin_alerts_one_open_per_subject` |
+| Placement status changes follow the state machine; no trial after the hold deadline (I11) | Trigger `placements_enforce_transition` (`clock_timestamp()`), `P0001` hints `HOLD_EXPIRED`, `ILLEGAL_TRANSITION` |
 | Money is positive integer kobo in NGN; a successful payment has a time | `ck_payments_amount`, `ck_payments_currency`, `ck_payments_paid_at` |
 | A fee belongs to a placement, a subscription to an agency | `ck_payments_kind_target` |
 | A notification exists exactly when its event was committed | Written in the event's own transaction; delivery (email, Firestore) runs after commit and only updates the notification's delivery columns (ADR 0015) |

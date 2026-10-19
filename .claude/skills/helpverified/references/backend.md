@@ -148,6 +148,9 @@ APScheduler in the API process (single instance) guarded by a Redis lock, or ARQ
 | `verification_expiry` | daily 02:00 WAT | Items past `expires_at` → `expired` (trigger delists) and notify agency |
 | `subscription_sync` | hourly | Reconcile subscription status with Paystack |
 | `notification_retry` | every minute | Deliver notifications still due: emails that failed or were missed (e.g. written just before a restart), plus Firestore writes when the mirror is on. Delivery normally happens right after commit; this is the safety net |
+| `refund_retry` | every 15 minutes | Advance refunds that are due (ADR 0017 D): submit `requested`, reconcile `uncertain` via Paystack's refund list (never resend blindly; `REFUND_AUTO_RESUBMIT` off), track `pending` to `processed`, escalate to admin alerts |
+| `reconcile_checkouts` | every minute | Resolve checkout attempts left `initiating` or `unknown` (same-reference re-initialise while the hold is valid, verify only after), with backoff |
+| `watch_checkouts` | every 15 minutes | Verify closed or failed attempts inside their 7-day watch window (provisional) so a late payment is refunded, never applied after the hold (OD1) |
 
 Jobs call services, never repositories directly, so rules apply identically. Tests freeze time with `time-machine`.
 

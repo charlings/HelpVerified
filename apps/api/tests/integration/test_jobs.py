@@ -190,7 +190,8 @@ def test_subscription_sync_tells_the_agency_when_payment_fails(
 # refund_retry
 
 
-def test_a_refused_refund_is_retried_until_paystack_accepts(api: TestClient, paystack: FakePaystack) -> None:
+def _late_payment(api: TestClient, paystack: FakePaystack) -> tuple[dict[str, str], str]:
+    """A family pays after its hold lapsed and the worker was taken: the payment can't be applied."""
     agc = agency(api)
     worker = listed_worker(agc.id)
     slow = family(api, "slow@example.com")
@@ -203,41 +204,61 @@ def test_a_refused_refund_is_retried_until_paystack_accepts(api: TestClient, pay
         quick = bearer(login(api, "quick@example.com"))
         accept(api, quick, propose(api, agc, quick_request, worker))  # takes the worker
         paystack.pay(slow_reference)
-        paystack.refuse_refunds = True
         assert send(api, charge_success(slow_reference)).status_code == 200
-
-    def refund_row() -> tuple[object, ...]:
-        [row] = run_sql(
-            "SELECT status::text, refund_sent_at, refund_attempts FROM payments "
-            "WHERE paystack_reference = :r",
-            r=slow_reference,
-        )
-        return row
-
-    status, sent_at, attempts = refund_row()
-    assert (status, sent_at, attempts) == ("refunded", None, 1)
-    assert run_job(api, "refund_retry") == 0  # still refused
-    assert refund_row()[2] == 2
-
-    paystack.refuse_refunds = False
-    assert run_job(api, "refund_retry") == 1
-
-    assert paystack.refunds == [slow_reference]
-    assert refund_row()[1] is not None
-    assert run_job(api, "refund_retry") == 0  # done: never refunded twice
-    assert kinds(api, slow)[0] == "payment_refunded"
+    return slow, slow_reference
 
 
-def test_refunds_stop_after_the_last_attempt(api: TestClient, paystack: FakePaystack) -> None:
-    flow = placed(api, paid=False)
-    run_sql(
-        "UPDATE payments SET status = 'refunded', paid_at = now(), refunded_at = now(), refund_attempts = 10 "
-        "WHERE placement_id = :p",
-        p=uuid.UUID(flow.placement_id),
+def _refund() -> tuple[object, ...]:
+    [row] = run_sql("SELECT status::text, paystack_refund_id FROM payment_refunds")
+    return row
+
+
+def _payment(reference: str) -> tuple[object, ...]:
+    [row] = run_sql(
+        "SELECT status::text, refunded_at FROM payments WHERE paystack_reference = :r", r=reference
     )
+    return row
 
-    assert run_job(api, "refund_retry") == 0
-    assert paystack.refunds == []  # left for an admin (logged as payment.refund_gave_up)
+
+def test_a_refund_is_tracked_until_paystack_processes_it(api: TestClient, paystack: FakePaystack) -> None:
+    """Requested is not refunded (ADR 0017 R-f): the payment is `refunded` only once Paystack says
+    `processed`, and only then is the family told it's complete and the alert resolved."""
+    slow, reference = _late_payment(api, paystack)
+    status, refund_id = _refund()
+    assert (status, _payment(reference)[0]) == ("pending", "refund_due")
+    assert refund_id == paystack.refund_id_for(reference)
+
+    # The refund was submitted at the moment of the late payment (31 minutes on); checks follow every 15.
+    with later(minutes=47):
+        run_job(api, "refund_retry")  # Paystack still says pending
+    assert _refund()[0] == "pending"
+    assert _payment(reference) == ("refund_due", None)
+
+    paystack.set_refund(paystack.refund_id_for(reference), "processed")
+    with later(minutes=63):
+        run_job(api, "refund_retry")
+
+    assert _refund()[0] == "processed"
+    status, refunded_at = _payment(reference)
+    assert status == "refunded"
+    assert refunded_at is not None
+    assert paystack.refunds == [reference]  # one refund request, ever
+    assert run_sql("SELECT count(*) FROM admin_alerts WHERE resolved_at IS NULL") == [(0,)]
+    assert "refund_completed" in kinds(api, slow)
+
+
+def test_a_declined_refund_needs_an_admin_and_isnt_resent(api: TestClient, paystack: FakePaystack) -> None:
+    paystack.refuse_refunds = True
+    slow, reference = _late_payment(api, paystack)
+
+    assert _refund()[0] == "provider_declined"
+    assert _payment(reference)[0] == "refund_due"  # an explicit unresolved state
+    with later(minutes=63):
+        run_job(api, "refund_retry")
+    assert paystack.refund_calls == 1  # no blind resubmission
+    kinds_open = {k for (k,) in run_sql("SELECT kind FROM admin_alerts WHERE resolved_at IS NULL")}
+    assert kinds_open == {"late_payment", "refund_attention"}
+    assert "refund_needs_attention" in kinds(api, slow)
 
 
 # document_retention

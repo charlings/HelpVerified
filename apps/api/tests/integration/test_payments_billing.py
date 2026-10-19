@@ -30,6 +30,7 @@ def test_verify_settles_a_paid_checkout_before_the_webhook(api: TestClient, pays
     assert after == {
         "reference": reference,
         "status": "success",
+        "refund_status": "none",
         "amount_kobo": 2_000_000,
         "placement_id": flow.placement_id,
         "placement_status": "trial",
@@ -88,12 +89,12 @@ def test_cancelling_a_hold_fails_its_checkout(api: TestClient, paystack: FakePay
         f"{API}/placements/{hold.placement_id}/cancel", headers=hold.family, json={"reason": "Changed plans"}
     )
 
-    [(status,)] = run_sql("SELECT status::text FROM payments")
-    assert status == "failed"
+    [(status, watched)] = run_sql("SELECT status::text, watch_until IS NOT NULL FROM payments")
+    assert (status, watched) == ("closed", True)  # no more checkout activity, but still watched
     paystack.pay(reference)  # they pay anyway, on the old checkout page
     send(api, _charge(reference))
     [(status,)] = run_sql("SELECT status::text FROM payments")
-    assert status == "refunded"  # money was taken for a hold that no longer exists: it goes back
+    assert status == "refund_due"  # money was taken for a hold that no longer exists: it goes back
     assert paystack.refunds == [reference]
     assert run_sql("SELECT count(*) FROM placements WHERE status = 'trial'") == [(0,)]
 

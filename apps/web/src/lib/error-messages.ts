@@ -21,6 +21,11 @@ export const errorMessages: Record<string, string> = {
   EMAIL_TAKEN: "An account with this email already exists. Try signing in instead.",
   AGENCY_EXISTS: "Your agency has already been registered. We'll email you once it's reviewed.",
   ALREADY_PROPOSED: "You've already proposed this worker for this request.",
+  // TODO(content): ADR 0017 section I wording, proposed and awaiting owner approval.
+  HOLD_EXPIRED: "Your hold on this worker expired. Accept again to place a new hold.",
+  CHECKOUT_IN_PROGRESS: "Your checkout is still being prepared. Please try again in a moment.",
+  CHECKOUT_ATTEMPTS_EXHAUSTED:
+    "This hold has reached its limit of payment attempts. Cancel it, or let it lapse and accept again.",
   TOKEN_EXPIRED: "This link has expired or has already been used. Request a new one.",
   VALIDATION_ERROR: "Please correct the highlighted fields.",
   RATE_LIMITED: "Too many attempts. Please wait a moment and try again.",

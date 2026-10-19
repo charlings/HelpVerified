@@ -75,6 +75,19 @@ class Settings(BaseSettings):
     PAYSTACK_AGENCY_PLAN_CODE: str | None = None  # a monthly plan created in Paystack; subscriptions need it
     PLACEMENT_FEE_KOBO: int = Field(default=2_000_000, gt=0)  # NGN 20,000
     AGENCY_SUBSCRIPTION_KOBO: int = Field(default=2_500_000, gt=0)  # NGN 25,000 a month; must match the plan
+    # Checkout recovery (ADR 0017). Every number here is provisional (ADR "Provisional numbers").
+    # Comma-separated Paystack channels for placement fees, e.g. "card" (OD3 proposes card-only; unset: every
+    # channel Paystack offers the account).
+    PAYSTACK_FEE_CHANNELS: str | None = None
+    CHECKOUT_STALE_SECONDS: int = Field(
+        default=30, gt=0
+    )  # an `initiating` attempt older than this is `unknown`
+    CHECKOUT_WATCH_DAYS: int = Field(default=7, gt=0)  # OD5: watch inactive attempts for late payments
+    # Section D step 7: closed until live-mode refund matching and duplicate refusal are confirmed (owner).
+    REFUND_AUTO_RESUBMIT: bool = False
+    REFUND_RECHECK_MINUTES: int = Field(default=15, gt=0)  # between reconciliation checks of a refund
+    REFUND_UNCERTAIN_ESCALATE_HOURS: int = Field(default=24, gt=0)
+    REFUND_PENDING_ESCALATE_DAYS: int = Field(default=7, gt=0)  # about 5 business days
 
     # Email (B6). "outbox" writes messages to EMAIL_OUTBOX_DIR (development and test only); "smtp" sends
     # through any provider's SMTP relay (Resend, Brevo, Postmark, SendGrid...): changing provider is config.
@@ -100,7 +113,6 @@ class Settings(BaseSettings):
     TRIAL_REMINDER_DAYS: int = Field(
         default=2, ge=1
     )  # remind both sides this many days before the trial ends
-    REFUND_MAX_ATTEMPTS: int = Field(default=10, gt=0)
 
     # Retention (security-and-compliance.md §1, NDPA storage limitation). Proposed defaults; owner to confirm.
     RETENTION_REJECTED_EVIDENCE_DAYS: int = Field(default=90, gt=0)
