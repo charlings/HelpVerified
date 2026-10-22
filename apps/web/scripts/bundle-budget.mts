@@ -1,6 +1,6 @@
 /**
  * Bundle budgets (M9). Reads the route table printed by `next build` and fails if a route's
- * "First Load JS" is over its budget. Usage: `pnpm build > build.log; pnpm bundle:check build.log`.
+ * "First Load JS" is over its budget. Usage: `bun run build > build.log; bun run bundle:check build.log`.
  *
  * Budgets are by what the page does, not where it sits: content pages carry no form libraries;
  * pages with forms and the signed-in workspaces carry React Hook Form, zod and TanStack Query.
@@ -17,6 +17,7 @@ const formPages = new Set([
   "/login",
   "/signup",
   "/signup/agency",
+  "/signup/google",
   "/forgot-password",
   "/reset-password",
   "/verify-email",

@@ -1,6 +1,6 @@
 # Bundles
 
-What each page ships, why, and the budgets CI enforces. Measured in M9 (2026-10-06) from `next build` ("First Load JS", compressed). Re-measure with `pnpm build` and check with `pnpm bundle:check <build log>`.
+What each page ships, why, and the budgets CI enforces. Measured in M9 (2026-10-06) from `next build` ("First Load JS", compressed). Re-measure with `bun run build` and check with `bun run bundle:check <build log>`.
 
 ## Budgets
 
@@ -36,7 +36,7 @@ The app's `package.json` now declares `"sideEffects": ["*.css", "**/features/aut
 | `/403` | 106 kB |
 | `/styleguide` (dev and tests only) | 120 kB |
 | `/contact` | 159 kB |
-| `/login`, `/signup`, `/signup/agency` | 171–174 kB |
+| `/login`, `/signup`, `/signup/agency`, `/signup/google` | 171–174 kB |
 | `/forgot-password`, `/reset-password`, `/verify-email` | 164–166 kB |
 | `/family`, `/family/settings` | 161–164 kB |
 | `/family/requests`, `/family/requests/new`, `/family/requests/[id]` | 139 / 174 / 154 kB |
