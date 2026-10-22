@@ -71,6 +71,7 @@ const visits: Visit[] = [
   { path: routes.admin.placements, as: "super_admin" },
   { path: routes.admin.placement("p-blessing"), as: "super_admin" },
   { path: routes.admin.audit, as: "super_admin" },
+  { path: routes.admin.alerts, as: "super_admin" },
 ];
 
 const WIDTHS = [375, 768, 1280, 1536] as const;

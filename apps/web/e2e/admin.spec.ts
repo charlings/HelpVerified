@@ -133,6 +133,7 @@ test.describe("only super admins", () => {
         routes.admin.workers,
         routes.admin.placements,
         routes.admin.audit,
+        routes.admin.alerts,
       ]) {
         await page.goto(path);
         await expect(page).toHaveURL(routes.forbidden);
@@ -152,6 +153,7 @@ test.describe("accessibility", () => {
     ["placements", routes.admin.placements],
     ["placement", routes.admin.placement("p-blessing")],
     ["audit log", routes.admin.audit],
+    ["alerts", routes.admin.alerts],
   ] as const) {
     test(`${name} has no axe violations at 375px and 1280px`, async ({ page, context }) => {
       await signInAs(context, "super_admin");

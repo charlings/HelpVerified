@@ -54,6 +54,7 @@ const pages: [path: string, title: string][] = [
   [routes.admin.placements, "Placements · HelpVerified"],
   [routes.admin.placement(SAMPLE_ID), "Placement · HelpVerified"],
   [routes.admin.audit, "Audit log · HelpVerified"],
+  [routes.admin.alerts, "Alerts · HelpVerified"],
 ];
 
 for (const [path, title] of pages) {
