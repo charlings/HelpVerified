@@ -1,6 +1,6 @@
 /**
  * Builds transparent logo assets and favicons from the supplied gradient logo (white background).
- * Usage: pnpm --filter web brand
+ * Usage: bun --filter web brand
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";

@@ -1,4 +1,4 @@
-// Generated types live in schema.ts (`pnpm contracts:generate`); this file only names them.
+// Generated types live in schema.ts (`bun run contracts:generate`); this file only names them.
 import type { components } from "./schema";
 
 export type { components, operations, paths } from "./schema";

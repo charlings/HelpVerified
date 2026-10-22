@@ -11,16 +11,15 @@ Families in Nigeria hire nannies, drivers and cleaners whose **ID, guarantor, re
 ## Requirements
 
 - Node 24 (`.nvmrc`)
-- pnpm via corepack: `corepack enable`
+- Bun 1.4 (version pinned in `package.json`; installs per user, no admin rights): `powershell -c "irm bun.sh/install.ps1 | iex"`
 - API: [uv](https://docs.astral.sh/uv/) (installs Python 3.14 itself), PostgreSQL 16 and Redis 7, via Docker or the portable setup below
 
 ## Setup
 
 ```bash
-corepack enable
-pnpm install
+bun install
 cp .env.example apps/web/.env.local     # PowerShell: Copy-Item .env.example apps/web/.env.local
-pnpm dev                                # http://localhost:3000
+bun run dev                             # http://localhost:3000
 ```
 
 The design-token and component gallery is at http://localhost:3000/styleguide (development only).
@@ -56,23 +55,23 @@ The design-token and component gallery is at http://localhost:3000/styleguide (d
 
 ## Commands
 
-Run from the repository root (or use `pnpm --filter web <script>`).
+Run from the repository root (or use `bun --filter web <script>`).
 
 | Command | What it does |
 | --- | --- |
-| `pnpm dev` | Start the web app |
-| `pnpm build` | Production build |
-| `pnpm lint` | ESLint, including module-boundary, raw-colour and route-literal rules |
-| `pnpm --filter web lint:css` | Stylelint (no hex colours outside `tokens.css`) |
-| `pnpm typecheck` | TypeScript, strict (runs `next typegen` first, so it works on a clean clone) |
-| `pnpm test` | Unit tests (Vitest) |
-| `pnpm --filter web test:e2e` | Playwright on Chromium and WebKit (iPhone 13); builds into `apps/web/.next-e2e` and serves on port 3100, so `pnpm dev` can keep running |
-| `pnpm --filter web exec playwright test e2e/audit.spec.ts --project=chromium --workers=1` | Accessibility and layout audit of every route (heavy; add `--shard=1/8` on a low-memory machine). See `docs/accessibility.md` |
-| `pnpm --filter web exec playwright test -c playwright.firefox.config.ts` | Firefox smoke run (not in CI; `playwright install firefox` first) |
-| `pnpm --filter web bundle:check <build log>` | Fail if a route is over its JS budget (`pnpm build > build.log` first). See `docs/bundles.md` |
-| `pnpm --filter web brand` | Regenerate transparent logo, mark and favicons from the source logo |
-| `pnpm --filter web images` | Regenerate responsive photo variants (needs the originals, see below) |
-| `pnpm --filter web lighthouse` | Lighthouse mobile on Home and Services against a production build (build first with `NEXT_PUBLIC_SITE_URL=http://localhost:3200`); reports in `apps/web/lighthouse/` |
+| `bun run dev` | Start the web app |
+| `bun run build` | Production build |
+| `bun run lint` | ESLint, including module-boundary, raw-colour and route-literal rules |
+| `bun --filter web lint:css` | Stylelint (no hex colours outside `tokens.css`) |
+| `bun run typecheck` | TypeScript, strict (runs `next typegen` first, so it works on a clean clone) |
+| `bun run test` | Unit tests (Vitest) |
+| `bun --filter web test:e2e` | Playwright on Chromium and WebKit (iPhone 13); builds into `apps/web/.next-e2e` and serves on port 3100, so `bun run dev` can keep running |
+| `bunx playwright test e2e/audit.spec.ts --project=chromium --workers=1` (from `apps/web`) | Accessibility and layout audit of every route (heavy; add `--shard=1/8` on a low-memory machine). See `docs/accessibility.md` |
+| `bunx playwright test -c playwright.firefox.config.ts` (from `apps/web`) | Firefox smoke run (not in CI; `playwright install firefox` first) |
+| `bun --filter web bundle:check <build log>` | Fail if a route is over its JS budget (`bun run build > build.log` first). See `docs/bundles.md` |
+| `bun --filter web brand` | Regenerate transparent logo, mark and favicons from the source logo |
+| `bun --filter web images` | Regenerate responsive photo variants (needs the originals, see below) |
+| `bun --filter web lighthouse` | Lighthouse mobile on Home and Services against a production build (build first with `NEXT_PUBLIC_SITE_URL=http://localhost:3200`); reports in `apps/web/lighthouse/` |
 
 **Demo accounts** (demo mode only, password `demo1234`):
 
@@ -93,7 +92,7 @@ Demo data lives in each browser tab and resets when the tab closes; to see one r
 
 **Demo mode:** with `NEXT_PUBLIC_API_MOCKING=enabled` (the Phase 1 default) the app talks to a mock API in the browser, seeded with fictional agencies, workers, requests and placements. Add `?mock_error=CODE` to any page URL (e.g. `/contact?mock_error=RATE_LIMITED`) to make API calls fail with that error code; add `&mock_error_method=POST` and/or `&mock_error_path=/proposals` to limit it to matching calls. Files uploaded in demo mode never leave the browser.
 
-First Playwright run: `pnpm --filter web exec playwright install chromium webkit`.
+First Playwright run (from `apps/web`): `bunx playwright install chromium webkit`.
 
 **API commands** (from `apps/api`):
 
@@ -125,7 +124,7 @@ First Playwright run: `pnpm --filter web exec playwright install chromium webkit
 
 ## Brand originals
 
-The source logo and photos live in `specs/frontend/brandfiles/`. The photos (14–25 MB each) are **not committed** (ADR 0002). Only the optimised variants in `apps/web/public/images/` are. To regenerate them, place `Photo1.jpg` (cleaner), `Photo2.jpg` (driver) and `Photo3.jpg` (nanny) in that folder and run `pnpm --filter web images`.
+The source logo and photos live in `specs/frontend/brandfiles/`. The photos (14–25 MB each) are **not committed** (ADR 0002). Only the optimised variants in `apps/web/public/images/` are. To regenerate them, place `Photo1.jpg` (cleaner), `Photo2.jpg` (driver) and `Photo3.jpg` (nanny) in that folder and run `bun --filter web images`.
 
 ## Structure
 

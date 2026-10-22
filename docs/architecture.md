@@ -4,7 +4,7 @@
 
 | Path | Purpose | Tooling |
 | --- | --- | --- |
-| `apps/web` | Next.js 15 App Router frontend | pnpm, TypeScript strict, Tailwind v4 |
+| `apps/web` | Next.js 15 App Router frontend | Bun (ADR 0018), TypeScript strict, Tailwind v4 |
 | `apps/api` | FastAPI backend (Phase 2, from B1) | uv, Python |
 | `packages/contracts` | TypeScript types generated from the API's OpenAPI schema (from B7) | openapi-typescript |
 

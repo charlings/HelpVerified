@@ -37,7 +37,7 @@ Also required:
 
 - [ ] App starts from clean clone using README steps
 - [ ] `lint`, `typecheck`, unit, integration, e2e all green
-- [ ] Production build succeeds (`pnpm build`, API docker image builds)
+- [ ] Production build succeeds (`bun run build`, API docker image builds)
 - [ ] Manual pass at 375, 768, 1280, 1536 px
 - [ ] Keyboard-only pass of the milestone's flows
 - [ ] axe: zero violations
@@ -51,7 +51,7 @@ Also required:
 
 | # | Scope | Acceptance criteria |
 | --- | --- | --- |
-| M1 Scaffold + design system | Monorepo, Next.js, Tailwind tokens, fonts, favicons, image pipeline, routes.ts with all routes as placeholders, ESLint boundaries, Vitest, Playwright, CI, docs skeleton, `/styleguide` | `pnpm install && pnpm dev` works; lint/typecheck/test/build pass in CI; tokens.css holds every design value and lint fails on raw hex elsewhere; every route renders a placeholder with correct title; favicons and manifest load; Photo1–3 optimised ≤ 300 KB at 1600 px and served via asset map; styleguide shows colours with contrast ratios, type scale, all button/input/badge states; axe clean on styleguide; `.env.example`, README, docs files exist; CHANGELOG has M1 entry |
+| M1 Scaffold + design system | Monorepo, Next.js, Tailwind tokens, fonts, favicons, image pipeline, routes.ts with all routes as placeholders, ESLint boundaries, Vitest, Playwright, CI, docs skeleton, `/styleguide` | `bun install && bun run dev` works; lint/typecheck/test/build pass in CI; tokens.css holds every design value and lint fails on raw hex elsewhere; every route renders a placeholder with correct title; favicons and manifest load; Photo1–3 optimised ≤ 300 KB at 1600 px and served via asset map; styleguide shows colours with contrast ratios, type scale, all button/input/badge states; axe clean on styleguide; `.env.example`, README, docs files exist; CHANGELOG has M1 entry |
 | M2 Shell + navigation | Marketing header with grouped menus, mobile drawer, footer; AppShell with sidebar/rail/bottom tabs per role; RoleGuard stub; 404/403/error pages | Keyboard navigation through all menus; drawer traps focus; correct nav per role at 375/768/1280 |
 | M3 Marketing pages | Home, Services (+ Reveal/Stagger), service detail ×3, How it works, For agencies, Pricing, About, Contact (mocked submit), Privacy, Terms; metadata, sitemap, robots, OG image | Lighthouse mobile ≥ 90 performance, 100 accessibility, 100 SEO on Home and Services; reduced-motion verified; copy from `content/` with `TODO(content)` markers listed |
 | M4 Auth screens | Login, signup + role picker, agency onboarding, forgot, reset, verify email, session expired, Google button; MSW auth handlers; session store; redirects | Every state in design-system §8 / frontend §7 reachable and covered by tests; "Demo mode" pill visible |
@@ -79,9 +79,9 @@ Also required:
 ```
 on: [push, pull_request]
 jobs:
-  web:  pnpm install --frozen-lockfile → lint → typecheck → test → build → playwright (with MSW) + axe
+  web:  bun install --frozen-lockfile → lint → typecheck → test → build → playwright (with MSW) + axe
   api:  uv sync → ruff → mypy → services: postgres:16, redis:7 → alembic up/down/up → pytest (incl. concurrency)
-  security: gitleaks, pnpm audit --audit-level high, pip-audit
+  security: gitleaks, bun audit --audit-level=high, pip-audit
   contracts: (from B7) regenerate types from API and fail on diff
 ```
 

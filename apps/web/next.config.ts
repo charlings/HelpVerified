@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Tests build into their own folder (playwright.config.ts) so `pnpm dev` on .next keeps working alongside.
+  // Tests build into their own folder (playwright.config.ts) so `bun run dev` on .next keeps working alongside.
   distDir: process.env.NEXT_DIST_DIR || ".next",
   experimental: {
     // ~9 KB of CSS inlined into the HTML removes a render-blocking request before the hero heading paints.

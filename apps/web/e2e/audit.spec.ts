@@ -10,7 +10,7 @@ import { signInAs, signInWithToken } from "./helpers/session";
  *   - no horizontal scroll at 375, 768, 1280 and 1536 px;
  *   - every visible interactive target at least 44 × 44 px, except links inside a sentence and
  *     checkboxes/radios whose label row is the target (measured as the label).
- * Run locally with one worker: `pnpm exec playwright test e2e/audit.spec.ts --project=chromium --workers=1`.
+ * Run locally with one worker: `bunx playwright test e2e/audit.spec.ts --project=chromium --workers=1`.
  */
 
 type Visit = { path: string; as?: Role; token?: string };

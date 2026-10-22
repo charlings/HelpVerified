@@ -30,7 +30,7 @@ Read only what the task needs. Each reference is self-contained.
 
 ## Stack (decided; do not swap without an ADR)
 
-- **Monorepo:** `apps/web` (Next.js 15 App Router, TypeScript strict, Tailwind v4, shadcn/ui, TanStack Query, Zustand, React Hook Form + Zod, MSW, Motion), `apps/api` (FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic), `packages/contracts` (OpenAPI-generated types). pnpm workspaces for JS, uv for Python.
+- **Monorepo:** `apps/web` (Next.js 15 App Router, TypeScript strict, Tailwind v4, shadcn/ui, TanStack Query, Zustand, React Hook Form + Zod, MSW, Motion), `apps/api` (FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic), `packages/contracts` (OpenAPI-generated types). Bun workspaces for JS, uv for Python.
 - **Data:** PostgreSQL 16 (source of truth), Redis (rate limits, cache, job locks), Firestore (notification feed only, never authoritative).
 - **Media:** Cloudinary. Worker photos public; verification documents `type: authenticated`, served only via short-lived signed URLs.
 - **Payments:** Paystack (NGN, amounts in kobo).
@@ -76,7 +76,7 @@ These come from the project owner. They exist so that one broken feature can be 
 5. **One source per rule.** Status labels, colours and allowed actions for each domain live in one place: transitions and allowed actions in `features/placements/state-machine.ts` (mirrored by `modules/placements/state_machine.py`), labels and colours in each feature's `status.ts`. Never re-derive them in a component.
 6. **Every data view has loading, empty and error states.** Every form has field-level and form-level errors.
 7. **Accessibility is part of done:** semantic HTML, visible labels, keyboard operable, visible focus, contrast ≥ 4.5:1 for text, `prefers-reduced-motion` respected.
-8. **Test as you go.** After each meaningful step run the relevant checks: `pnpm lint && pnpm typecheck && pnpm test` (web), `uv run ruff check && uv run mypy app && uv run pytest` (api). For the hard rules, write the failing test first.
+8. **Test as you go.** After each meaningful step run the relevant checks: `bun run lint && bun run typecheck && bun run test` (web), `uv run ruff check && uv run mypy app && uv run pytest` (api). For the hard rules, write the failing test first.
 9. **Do not over-engineer.** Add an abstraction only when a second real use exists.
 10. **Preserve behaviour.** Refactors must not change what users see unless the task says so.
 11. **Surface ambiguity.** If a requirement is unclear, name it, recommend a default, and record it in `docs/decisions/` or the milestone report. Never decide product rules silently.

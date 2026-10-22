@@ -59,7 +59,7 @@ The Nigeria Data Protection Act 2023 and the NDPC's implementation directive app
 - API: CORS allow-list from `CORS_ORIGINS`, credentials only for the web origin; request body limit 1 MB; Pydantic strict types; SQLAlchemy parameterised queries only (no f-string SQL).
 - Tenant isolation tests: for each resource type, an agency/family from another tenant gets 404.
 - Rate limits per `references/backend.md` §9.
-- Dependencies: Dependabot or Renovate; `pnpm audit` and `pip-audit` in CI (warn on moderate, fail on high).
+- Dependencies: Dependabot or Renovate; `bun audit` and `pip-audit` in CI (warn on moderate, fail on high).
 
 ## 7. Secrets
 

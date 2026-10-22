@@ -20,25 +20,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: corepack enable
-      - name: Cache pnpm store
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Cache bun install cache
         uses: actions/cache@v4
         with:
-          path: ~/.local/share/pnpm/store
-          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm lint:css
-      - run: pnpm typecheck
-      - run: pnpm test
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run lint:css
+      - run: bun run typecheck
+      - run: bun run test
       - name: Build
         shell: bash # -o pipefail, so a failed build still fails the step
-        run: pnpm build 2>&1 | tee build.log
+        run: bun run build 2>&1 | tee build.log
       - name: Bundle budgets (docs/bundles.md)
-        run: pnpm bundle:check build.log
-      - run: pnpm exec playwright install --with-deps chromium webkit
+        run: bun run bundle:check build.log
+      - run: bunx playwright install --with-deps chromium webkit
       # The accessibility audit (every route x four widths) runs in its own job below.
-      - run: pnpm test:e2e --grep-invert "^audit "
+      - run: bun run test:e2e --grep-invert "^audit "
         env:
           CI: "true"
       - uses: actions/upload-artifact@v4
@@ -60,15 +62,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: corepack enable
-      - name: Cache pnpm store
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Cache bun install cache
         uses: actions/cache@v4
         with:
-          path: ~/.local/share/pnpm/store
-          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm exec playwright test e2e/audit.spec.ts --project=chromium
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - run: bunx playwright test e2e/audit.spec.ts --project=chromium
         env:
           CI: "true"
       - uses: actions/upload-artifact@v4
@@ -91,11 +95,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: corepack enable
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm lighthouse
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run lighthouse
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -189,16 +195,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: corepack enable
-      - run: pnpm install --frozen-lockfile
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --locked
         working-directory: apps/api
-      - run: pnpm contracts:generate
+      - run: bun run contracts:generate
       - name: Fail if the committed contracts are out of date
-        run: git diff --exit-code -- packages/contracts || (echo "Run 'pnpm contracts:generate' and commit the result." && exit 1)
+        run: git diff --exit-code -- packages/contracts || (echo "Run 'bun run contracts:generate' and commit the result." && exit 1)
 
   security:
     runs-on: ubuntu-latest
@@ -212,6 +220,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: corepack enable
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --audit-level high
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun audit --audit-level=high

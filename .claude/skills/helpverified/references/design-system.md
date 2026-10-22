@@ -123,7 +123,7 @@ export const images = {
 } as const;
 ```
 
-- Originals: `Photo3.jpg` → nanny, `Photo2.jpg` → driver, `Photo1.jpg` → cleaner (6600–8000 px, 14–25 MB each). `pnpm images` writes 640/1024/1600/2400 px AVIF + WebP + JPEG to `public/images/`, target ≤ 300 KB at 1600 px.
+- Originals: `Photo3.jpg` → nanny, `Photo2.jpg` → driver, `Photo1.jpg` → cleaner (6600–8000 px, 14–25 MB each). `bun run images` writes 640/1024/1600/2400 px AVIF + WebP + JPEG to `public/images/`, target ≤ 300 KB at 1600 px.
 - Render via `components/shared/ResponsiveImage` (wraps `next/image`) with `sizes`, a fixed aspect-ratio box and `object-position` from `focal`. Above-the-fold hero gets `priority`; everything else lazy.
 - Missing image → brand gradient block with the logo mark at 20% opacity. Every placeholder is listed in `docs/placeholders.md`.
 - All three photos are temporary until the owner confirms licences.

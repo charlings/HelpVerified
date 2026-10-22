@@ -1,16 +1,25 @@
 {
   "name": "helpverified",
   "private": true,
-  "packageManager": "pnpm@12.9.1",
+  "packageManager": "bun@1.4.0",
   "engines": {
     "node": ">=24"
   },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "trustedDependencies": [
+    "esbuild",
+    "sharp",
+    "unrs-resolver"
+  ],
   "scripts": {
-    "dev": "pnpm --filter web dev",
-    "build": "pnpm --filter web build",
-    "lint": "pnpm --filter web lint",
-    "typecheck": "pnpm --filter web typecheck",
-    "test": "pnpm --filter web test",
-    "contracts:generate": "cd apps/api && uv run python -m scripts.export_openapi ../../packages/contracts/openapi.json && cd ../.. && pnpm --filter @helpverified/contracts generate"
+    "dev": "bun --filter web dev",
+    "build": "bun --filter web build",
+    "lint": "bun --filter web lint",
+    "typecheck": "bun --filter web typecheck",
+    "test": "bun --filter web test",
+    "contracts:generate": "cd apps/api && uv run python -m scripts.export_openapi ../../packages/contracts/openapi.json && cd ../.. && bun --filter @helpverified/contracts generate"
   }
 }

@@ -1,0 +1,4 @@
+# Same public hoisting pnpm applied by default (ADR 0018): eslint-config-next's legacy config resolves
+# its plugins from apps/web, so they must sit in the root node_modules.
+[install]
+publicHoistPattern = ["*eslint*", "*prettier*"]

@@ -1,5 +1,23 @@
 # Changelog
 
+## ADR 0018 — Bun replaces pnpm (2026-10-22)
+
+**Status: committed and pushed to `feature/backend` at the owner's request. CI on GitHub not yet confirmed green (#7).**
+
+1. **Objective:** finish the half-done switch from pnpm to Bun found in the working tree, with an ADR.
+2. **Files created:** `docs/decisions/0018-bun-package-manager.md`, `bun.lock` (migrated from `pnpm-lock.yaml`), `bunfig.toml`.
+3. **Files modified:** root `package.json` (Bun workspaces, `trustedDependencies`, scripts); `.github/workflows/ci.yml` (setup-bun, `bun install --frozen-lockfile`, `bun audit`; two lines of broken characters (`â€”`, `Â§`) from a PowerShell ANSI read repaired); Playwright configs, `scripts/*.mts`, `export_openapi.py` and comments (command names); CLAUDE.md, README, skill references, `docs/architecture.md`, `accessibility.md`, `asset-inventory.md`, `bundles.md` (commands). Removed `pnpm-lock.yaml` and `pnpm-workspace.yaml`.
+4. **Key decisions:** ADR 0018. pnpm's default public hoisting of `*eslint*` and `*prettier*` is kept in `bunfig.toml`, because lint fails without it.
+5. **Checks:** `bun install --frozen-lockfile` OK; lint, stylelint and typecheck clean; `next build` OK. Vitest full run: 480 of 484 passed, with 4 tests timing out at 5 s and 3 worker start-up timeouts under full load (the laptop's known load sensitivity). The 6 affected files then passed alone (51 of 51). Bundle budgets: see the separate fix below. Playwright e2e and the API suite weren't run (the API is unchanged).
+6. **Known issues:** CI with Bun is unverified on GitHub.
+7. **Assumptions:** none beyond ADR 0018.
+8. **Acceptance:** reproducible install (met); web checks (met, except e2e not run); CI green (not verified).
+9. **Next step:** push, then check the GitHub Actions run (#7).
+
+Also in this push:
+- `bundle-budget.mts` was missing `/signup/google` (a form page since ADR 0016) from its form-page list, so CI's budget step would have failed with or without Bun. The route was added there and to `docs/bundles.md`.
+- The e2e route, admin and audit specs now cover `/admin/alerts` (ADR 0017).
+
 ## ADR 0017 implementation — checkout attempts, refunds, admin alerts (2026-10-19)
 
 **Status: implemented and tested locally on `feature/backend`; not pushed; not signed off. ADR 0017 stays Proposed:** the owner decisions in owner-inputs #7d and the live-mode checks in #13a are still open. The owner authorised implementation on 2026-10-19 ("Resolve ADR 0017 and Forge Ahead Safely"). All tests ran on disposable databases (`hv_adr0017_tests`, `hv_adr0017_scratch`); the project databases were not touched and nothing was seeded. Paystack was used in test mode only (test keys; the findings are in ADR 0017); no live transactions or live refunds.

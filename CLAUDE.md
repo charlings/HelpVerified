@@ -29,7 +29,7 @@ Both are enforced in PostgreSQL (trigger + partial unique index) **and** in one 
 
 ## Stack
 
-- `apps/web` — Next.js 15 (App Router), TypeScript strict, Tailwind v4, shadcn/ui, TanStack Query, Zustand, React Hook Form + Zod, MSW, Motion. Package manager: **pnpm**.
+- `apps/web` — Next.js 15 (App Router), TypeScript strict, Tailwind v4, shadcn/ui, TanStack Query, Zustand, React Hook Form + Zod, MSW, Motion. Package manager: **Bun**.
 - `apps/api` — FastAPI, Pydantic v2, SQLAlchemy 2.0 (async), Alembic, PostgreSQL 16, Redis, Cloudinary, Paystack; Firestore is an optional notification mirror, off for now (`NOTIFICATIONS_MIRROR=none`). Package manager: **uv**.
 - `packages/contracts` — TypeScript types generated from the API's OpenAPI schema. Never edit by hand.
 
@@ -37,28 +37,28 @@ Both are enforced in PostgreSQL (trigger + partial unique index) **and** in one 
 
 ```bash
 # Setup
-pnpm install
+bun install
 docker compose up -d postgres redis
 cd apps/api && uv sync && uv run alembic upgrade head && uv run python -m app.scripts.seed
 
 # Run
-pnpm --filter web dev                     # http://localhost:3000
+bun --filter web dev                      # http://localhost:3000
 cd apps/api && uv run fastapi dev app/main.py   # http://localhost:8000/docs
 
 # Check (run after every meaningful change to the app you touched)
-pnpm --filter web lint && pnpm --filter web typecheck && pnpm --filter web test
-pnpm --filter web test:e2e                # Playwright + axe
-pnpm --filter web build
+bun --filter web lint && bun --filter web typecheck && bun --filter web test
+bun --filter web test:e2e                 # Playwright + axe
+bun --filter web build
 cd apps/api && uv run ruff check . && uv run mypy app && uv run pytest -q
 cd apps/api && uv run pytest tests/concurrency -q   # needs Postgres running
 
 # Utilities
-pnpm --filter web images                  # optimise src/assets/images → public/images
-pnpm contracts:generate                   # regenerate API types (API must be running)
+bun --filter web images                   # optimise src/assets/images → public/images
+bun run contracts:generate                # regenerate API types (API must be running)
 cd apps/api && uv run alembic revision --autogenerate -m "<message>"
 ```
 
-Run a single test: `pnpm --filter web vitest run path/to/file.test.tsx` or `uv run pytest tests/path/test_x.py::test_name -q`.
+Run a single test: `cd apps/web && bunx vitest run path/to/file.test.tsx` or `uv run pytest tests/path/test_x.py::test_name -q`.
 
 ## Where things live
 

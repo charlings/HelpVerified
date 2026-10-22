@@ -1,11 +1,11 @@
 /**
  * Type-level check that the web app's types match the API (B7, packages/contracts). Nothing here runs:
- * `pnpm typecheck` fails when the API's OpenAPI schema stops satisfying what a screen reads.
+ * `bun run typecheck` fails when the API's OpenAPI schema stops satisfying what a screen reads.
  *
  * - Responses: `Reads<Web, Api>` — what the API returns must be assignable to the web type.
  * - Request bodies: `Sends<Api, Web>` — what the web sends must be assignable to the API's input.
  *
- * After an API change: `pnpm contracts:generate`, then fix whichever side is wrong.
+ * After an API change: `bun run contracts:generate`, then fix whichever side is wrong.
  */
 import type { Schemas } from "@helpverified/contracts";
 

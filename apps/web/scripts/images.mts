@@ -1,6 +1,6 @@
 /**
  * Produces responsive variants of the supplied photos for src/assets/images/index.ts.
- * Originals live outside git (ADR 0002). Usage: pnpm --filter web images
+ * Originals live outside git (ADR 0002). Usage: bun --filter web images
  */
 import { mkdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";

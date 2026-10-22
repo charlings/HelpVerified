@@ -1,6 +1,6 @@
 /**
  * The only place image paths appear. `src` is the base path of the variants produced by
- * `pnpm --filter web images` (public/images/<key>-<width>.<ext>).
+ * `bun --filter web images` (public/images/<key>-<width>.<ext>).
  */
 export type ImageEntry = {
   src: string;

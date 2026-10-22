@@ -1,6 +1,6 @@
 /**
  * Lighthouse (mobile) on Home and Services against a production server, using Playwright's Chromium.
- * Usage: pnpm --filter web build && pnpm --filter web lighthouse  (expects `pnpm start --port 3200` or starts it)
+ * Usage: bun --filter web build && bun --filter web lighthouse  (expects `bun run start --port 3200` or starts it)
  */
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -31,7 +31,7 @@ async function waitForServer(url: string, timeoutMs = 60_000) {
 
 async function main() {
   await mkdir(outDir, { recursive: true });
-  const server = spawn("pnpm", ["start", "--port", String(PORT)], { cwd: root, shell: true, stdio: "ignore" });
+  const server = spawn("bun", ["run", "start", "--port", String(PORT)], { cwd: root, shell: true, stdio: "ignore" });
   const chrome = await chromeLauncher.launch({
     chromePath: chromium.executablePath(),
     chromeFlags: ["--headless=new", "--no-sandbox"],

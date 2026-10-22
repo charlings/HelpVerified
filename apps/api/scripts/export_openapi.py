@@ -5,7 +5,7 @@
 
 The schema doesn't depend on settings, but building the app reads them, so `.env` (or the CI env) must be
 complete. Keys are sorted so the file only changes when the API does. Usually run through the root
-script `pnpm contracts:generate`, which also regenerates the TypeScript types.
+script `bun run contracts:generate`, which also regenerates the TypeScript types.
 """
 
 import json

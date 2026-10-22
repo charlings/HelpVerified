@@ -18,7 +18,7 @@ How HelpVerified meets the accessibility checklist (skill `frontend.md` §10) an
 | Colour contrast | every semantic pairing, read from `tokens.css` | `src/styles/tokens-contrast.test.ts` |
 | Reduced motion | content renders in its final state | `e2e/marketing.spec.ts` |
 
-Run the audit locally with one worker (it's heavy): `pnpm exec playwright test e2e/audit.spec.ts --project=chromium --workers=1` (add `--shard=1/4` etc. on a low-memory machine).
+Run the audit locally with one worker (it's heavy): `bunx playwright test e2e/audit.spec.ts --project=chromium --workers=1` (add `--shard=1/4` etc. on a low-memory machine).
 
 ## Touch-target exceptions (WCAG 2.5.5)
 

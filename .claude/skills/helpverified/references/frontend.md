@@ -169,11 +169,11 @@ Domain-specific must-haves:
 ## 12. Commands
 
 ```
-pnpm install
-pnpm --filter web dev
-pnpm --filter web lint && pnpm --filter web typecheck && pnpm --filter web test
-pnpm --filter web test:e2e          # Playwright + axe
-pnpm --filter web build
-pnpm --filter web images            # sharp: src/assets/images → public/images variants
-pnpm contracts:generate             # openapi-typescript from API /openapi.json
+bun install
+bun --filter web dev
+bun --filter web lint && bun --filter web typecheck && bun --filter web test
+bun --filter web test:e2e           # Playwright + axe
+bun --filter web build
+bun --filter web images             # sharp: src/assets/images → public/images variants
+bun run contracts:generate          # openapi-typescript from API /openapi.json
 ```

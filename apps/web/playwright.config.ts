@@ -20,11 +20,11 @@ export default defineConfig({
     { name: "webkit-mobile", use: { ...devices["iPhone 13"], viewport: { width: 375, height: 812 } } },
   ],
   webServer: {
-    command: `pnpm build && pnpm start --port ${PORT}`,
+    command: `bun run build && bun run start --port ${PORT}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 300_000,
-    // A separate build folder, so a developer's `pnpm dev` (.next) isn't overwritten while tests run.
+    // A separate build folder, so a developer's `bun run dev` (.next) isn't overwritten while tests run.
     env: { ENABLE_STYLEGUIDE: "true", NEXT_PUBLIC_SITE_URL: baseURL, NEXT_DIST_DIR: ".next-e2e" },
   },
 });
