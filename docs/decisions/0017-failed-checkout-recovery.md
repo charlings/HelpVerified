@@ -1,10 +1,18 @@
 # 0017 — Failed checkout recovery and payment provider errors
 
 - **Status:** Proposed — **not accepted.** The owner gave the direction on 2026-10-19 and approved the target
-  checkout design **as a design only**. It isn't built, and it isn't authorised for implementation. The ADR
-  becomes Accepted only by the owner's explicit approval, after the open decisions at the end are resolved.
-  The owner decisions OD1–OD9 (below) are **approved design direction**: not acceptance of this ADR, not
-  implemented, and not authorisation to implement or to start B7.
+  checkout design **as a design only**. The ADR becomes Accepted only by the owner's explicit approval, after
+  the open decisions at the end are resolved. The owner decisions OD1–OD9 (below) are **approved design
+  direction**, not acceptance of this ADR, and not authorisation to start B7.
+- **Implementation (reconciled 2026-10-25):** the target design was **implemented** on 2026-10-19 in local
+  commits `9169985` (API, migration 0008) and `a6f1a3a` (web, mocks, contracts) on `feature/backend`. They are
+  **not pushed** and **not signed off**. At the time, this header said the design was not authorised for
+  implementation, while the commit message and `docs/CHANGELOG.md` recorded an owner authorisation. On
+  **2026-10-25** the owner authorised **retaining** that implementation and continuing its review and
+  completion, **from that date onward**. This record doesn't say the implementation was authorised before
+  the commits were made. What's built, what's still an open policy decision and what's still unverified at
+  Paystack are listed under "Implementation status" at the end. Built code isn't approved policy: the
+  provisional values and wording in it wait for the owner's decisions (#7d, #7e).
 - **Date:** 2026-10-15 (fixes from the Swagger test run, `docs/swagger-test-plan.md` issues 2 and 3); revised
   six times on 2026-10-19 after the owner's reviews. The fourth revision records the Paystack test-mode
   findings; the fifth records owner decisions OD1–OD9; the sixth incorporates the read-only technical review
@@ -16,8 +24,11 @@
   revisit any item.
 - **Amends, once accepted:** ADR 0013 §3 and §9, ADR 0014 §3, §4 and §5, ADR 0015 (new jobs). See "Relation to
   earlier ADRs".
-- **What exists today:** the code committed on 2026-10-15 (`4f1b00b`) is described under "Built today", checked
-  against the repository on 2026-10-19. Everything under "Target design" is **proposed and not built**.
+- **What exists today:** "Built today" describes the code committed on 2026-10-15 (`4f1b00b`), as checked on
+  2026-10-19 **before** `9169985`. Most of that section is now superseded. "Target design" is **implemented**
+  in `9169985` and `a6f1a3a`, except for the differences listed under "Implementation status". Its policy
+  values (attempt cap, settlement-time rule, refund policy, wording, legacy rows, resubmission gate) are
+  still **proposed, awaiting owner confirmation**.
 
 ## Context
 
@@ -69,15 +80,19 @@ Third review:
 4. **A proposal may have several placements over time** (migration 0007). The unique constraint on
    `placements.proposal_id` becomes a plain index. `placements_one_active_per_worker` and
    `placements_one_active_per_request` are unchanged. *(Built.)*
-5. **Checkout, settlement and refunds follow the target design.** *(Proposed; not built.)*
-6. **Idempotent replays are checked for liveness.** *(Proposed; not built.)*
+5. **Checkout, settlement and refunds follow the target design.** *(Implemented in `9169985`; not signed
+   off. Policy values provisional, #7d.)*
+6. **Idempotent replays are checked for liveness.** *(Implemented in `9169985` (`core/idempotent.py`); not
+   signed off.)*
 7. **The demo seed writes rows directly, with safeguards.** *(Built; safeguards listed below.)*
 
 ## Owner decisions approved as design direction (2026-10-19)
 
-The owner approved these on 2026-10-19 as the **intended design direction**. They are not acceptance of this
-ADR, they're not implemented or tested, and they don't authorise implementation or B7. Implementation details
-stay subject to the final technical plan.
+The owner approved these on 2026-10-19 as the **intended design direction**. They aren't acceptance of this
+ADR, and they don't authorise B7. *(Reconciled 2026-10-25: the text below was written before `9169985`, which
+implemented OD1–OD9 and the test-mode design recommendations on 2026-10-19. The owner authorised retaining
+that implementation on 2026-10-25. For what's built and how it differs from the text, read "Implementation
+status" at the end.)*
 
 The owner's labels were D1–D9. They're written OD1–OD9 here, because D1–D13 already name the documented
 Paystack facts.
@@ -323,7 +338,7 @@ Rule 6 keeps the design safe either way: if the hosted page does allow a retry, 
     matching and of duplicate-refund refusal (`docs/owner-inputs.md` #13a). Until then, an `uncertain` refund
     that reconciliation can't match goes to `admin_review`.
 
-### OD9. Technical safeguards (approved in principle; not implemented or tested)
+### OD9. Technical safeguards (approved in principle; implemented and tested locally in `9169985`)
 
 1. Classify Paystack replies by their machine-readable `code`, not by HTTP status alone.
 2. Handle both "not found" forms: the observed HTTP 400 `transaction_not_found` (O4) and the documented 404
@@ -439,11 +454,11 @@ last checked), and one declined charge.
 `GET /refund/{id}`, or a verified `refund.processed` webhook) counts as completed; R-f in the design already
 says so. O5 confirms the gap in test mode: the request was accepted, but the refund stayed `pending`.
 
-### Design recommendations from the test-mode run (approved as design direction; not implemented)
+### Design recommendations from the test-mode run (approved as design direction; implemented in `9169985`)
 
 These refine the target design below. On 2026-10-19 the owner approved them as design direction: items 1, 2
-and 5–8 under OD9, item 3 as OD7, item 4 as OD8, and item 6 together with OD1. They're not implemented or
-tested, and the ADR is still Proposed.
+and 5–8 under OD9, item 3 as OD7, item 4 as OD8, and item 6 together with OD1. They were implemented and
+tested locally in `9169985`. The ADR is still Proposed, and their live-mode behaviour is unverified (#13a).
 
 1. **Classify Paystack replies by `code`, not HTTP status.** The built `PaystackClient._call` treats every 4xx
    as a plain refusal (`PaymentProviderRejected`), including `duplicate_reference`, `transaction_not_found` and
@@ -497,6 +512,10 @@ Where an outcome can't be established, it stays **unresolved and escalates to an
 
 ## Built today (verified in the repository, 2026-10-19)
 
+*Superseded (reconciled 2026-10-25):* this section describes `4f1b00b`, before `9169985`. Checkout, payment
+statuses, the database constraints, settlement, refunds and alerts below were replaced by migration 0008 and
+the rewritten `PaymentService`. It's kept as the record of the starting point.
+
 - **Checkout** (`PaymentService.start_placement_checkout`):
   - in one transaction it locks the placement row, reuses a stored link, or inserts a `pending` payment with a
     new reference;
@@ -539,7 +558,11 @@ Where an outcome can't be established, it stays **unresolved and escalates to an
   - at `REFUND_MAX_ATTEMPTS` (10) only an error log is written (`payment.refund_gave_up`).
 - **No persistent admin alerts exist.**
 
-## Target design (proposed, not built)
+## Target design (implemented in `9169985`; policy values proposed)
+
+*Reconciled 2026-10-25:* this design was implemented on 2026-10-19. Where the code differs from the text
+below, "Implementation status" says how. Items marked "proposed, awaiting owner confirmation" are still
+owner decisions, even though the code uses their provisional values.
 
 ### Invariants and how they're enforced
 
@@ -825,7 +848,9 @@ one (O5: an accepted refund stayed `pending`, with an expected date days away).
   fetches, the recovery algorithm) and admin resolutions. **No path locks a refund row and then its payment
   row.** A refund update that starts from a refund ID first reads its `payment_id` without a lock, then locks
   the payment, then re-reads and locks the refund.
-- **Database enforcement (proposed, not built):**
+- **Database enforcement (superseded in implementation: migration 0008 uses a counter column,
+  `payments.refund_committed_kobo`, kept by a trigger and bounded by a `CHECK`, instead of the summing trigger
+  described here; see "Implementation status"):**
   - **The trigger:** a `CONSTRAINT TRIGGER … AFTER INSERT OR UPDATE OF amount_kobo, status ON payment_refunds
     … NOT DEFERRABLE`. It acquires the parent payment row lock (`SELECT … FOR UPDATE`) **before** it re-sums
     the committed refunds, and raises if the sum exceeds the captured amount. `NOT DEFERRABLE` means a
@@ -1135,8 +1160,10 @@ their meaning):
 
 ### I. Family-facing payment wording (proposed, awaiting owner approval)
 
-The copy below is a product decision (`docs/owner-inputs.md` #7d). It's not implemented, and the existing UI
-copy is unchanged.
+The copy below is a product decision (`docs/owner-inputs.md` #7d), **not yet approved**. *(Reconciled
+2026-10-25: `a6f1a3a` and `9169985` use this wording provisionally, marked `TODO(content)` in
+`lib/error-messages.ts`, `PaymentCallbackScreen.tsx`, `features/admin/status.ts` and
+`notifications/messages.py`, pending the owner's approval.)*
 
 | Situation | Proposed wording |
 | --- | --- |
@@ -1237,6 +1264,11 @@ design lands, seeded payments must use the new states, and I2 and I7 then guard 
   together.
 
 ## Contract and test changes required (when implemented)
+
+*Reconciled 2026-10-25:* `9169985` and `a6f1a3a` updated `api-contracts.md`, the generated contracts, the
+mocks and the tests. Two required items are still missing: the ADR 0009 amendment naming the affected
+screens and mock handlers, and Playwright against the real API (B7). For the remaining test gaps, see
+"Implementation status".
 
 **`api-contracts.md`:**
 - **§1:** the one-key-per-action rule and the replay liveness check.
@@ -1382,7 +1414,8 @@ test mode"; the remaining checks are open item 1 in "Owner decisions: status".
   decision after live-mode confirmation; until then, unmatched uncertain refunds go to manual review.
 - **Q6 (sixth revision).** The wire value for payment `refund_due`. Now tracked as **contract question X1**
   (states section, "The inconsistency behind X1"). Mapping it to `refunded` would show a refund as completed
-  before `processed`; `refund_pending` is recommended. Open.
+  before `processed`; `refund_pending` is recommended. *Implemented as `refund_pending` (`9169985`); awaiting
+  the owner's formal ratification (#7e).*
 - **Q7 (sixth revision).** `watch_until` per state: one window (OD5) for every inactive attempt, or a shorter
   one for `rejected`. Provisional: the same 7 days.
 - **A-assumptions:** U3 (a 4xx means no transaction) is mitigated by A3's same-reference confirmation. U7 (no
@@ -1400,9 +1433,10 @@ test mode"; the remaining checks are open item 1 in "Owner decisions: status".
   - section G's recommended client retry after a temporary 409 (about 2 seconds, once);
   - the attempt cap's value, 3 (OD3 rule 10; an owner decision, #7d).
 
-## Owner decisions: status (2026-10-19)
+## Owner decisions: status (2026-10-19; reconciled 2026-10-25)
 
-**Approved as design direction** (OD1–OD9; not acceptance, not implemented):
+**Approved as design direction** (OD1–OD9, 2026-10-19; not acceptance; implemented in `9169985`, and on
+2026-10-25 the owner authorised retaining that implementation):
 - the stale-replay error is `HOLD_EXPIRED` (OD2);
 - card-only at launch is the proposed direction, pending confirmation of the Paystack configuration before
   production billing (OD3);
@@ -1419,18 +1453,21 @@ test mode"; the remaining checks are open item 1 in "Owner decisions: status".
    - T6: refund webhook bodies, **not run**; the list and fetch part did run;
    - T8: retry on the hosted checkout page, **not run**; the `/charge` part did run.
 
-   *Recommendation: run T8 on the hosted page before implementing the recovery logic, if feasible. The OD3
+   *The recommendation to run T8 on the hosted page before implementing the recovery logic was overtaken:
+   the logic was implemented on 2026-10-19 without it. T8 is still worth running. The OD3
    authoritative-failure rule stands whatever the result.* T2, T7 and T6's webhook part must be completed, or
    their risk explicitly accepted by the owner, before production billing.
 2. **Live-mode confirmation** of O1, O6 and O7 (verified in live mode, or confirmed by Paystack) before
    production billing (OD7, OD8).
-3. **The Paystack configuration for card-only** (OD3), confirmed before production billing.
-4. **The implementation slot:** before B7, or as B7's first milestone. *Recommendation: before B7, because B7's
-   Playwright flows need the final semantics.*
-5. **The final technical plan** for implementing this design (states, migration, jobs, alerts, contract), for
-   the owner's approval.
-6. **Acceptance of ADR 0017** by the owner.
-7. **Sixth-revision proposals, awaiting owner confirmation** (`docs/owner-inputs.md` #7d):
+3. **The Paystack configuration for card-only** (OD3), confirmed before production billing. The code supports
+   it through `PAYSTACK_FEE_CHANNELS` (unset by default, which allows every channel).
+4. **The implementation slot:** *overtaken.* The design was implemented before B7, on 2026-10-19 (`9169985`,
+   `a6f1a3a`). On 2026-10-25 the owner authorised retaining it and continuing its review and completion.
+5. **Review of the implementation** for the owner's approval. This replaces "the final technical plan", which
+   wasn't produced separately before the code was written. The plan as built is in "Implementation status".
+6. **Acceptance of ADR 0017** by the owner. Not given; the ADR stays Proposed.
+7. **Sixth-revision proposals, awaiting owner confirmation** (`docs/owner-inputs.md` #7d). The code uses
+   each proposal's provisional value; none is approved:
    - the settlement-time rule: the database's `clock_timestamp()` at settlement decides, and `paid_at` doesn't
      override it (OD1);
    - at most three attempts per hold (OD3 rule 10);
@@ -1438,28 +1475,35 @@ test mode"; the remaining checks are open item 1 in "Owner decisions: status".
    - the family-facing wording (section I);
    - the legacy mapping's ambiguous rows (section H);
    - when automatic refund resubmission may be enabled (Q5).
-8. **Contract questions** (`docs/owner-inputs.md` #7e), each needing an explicit decision and, where it adds a
-   wire value or error code, an ADR 0009 amendment naming the affected screens and mock handlers:
-   - **X1:** the wire value for a refund that isn't yet `processed`. `refund_pending` is recommended (states
-     section).
-   - **X2:** the error code and contract amendment for the attempt cap (OD3 rule 10; the code is a
-     placeholder).
+8. **Contract questions** (`docs/owner-inputs.md` #7e). Each is **implemented** as the engineering
+   resolution below and is **awaiting the owner's formal ratification**. Each also still needs the ADR 0009
+   amendment naming the affected screens and mock handlers, which hasn't been written:
+   - **X1:** the wire value for a refund that isn't yet `processed`. *Implemented:* payment status
+     `refund_pending`, plus `refund_status` (`none | in_progress | needs_attention | completed`).
+   - **X2:** the error for the attempt cap (OD3 rule 10). *Implemented:* `409 CHECKOUT_ATTEMPTS_EXHAUSTED` at
+     the provisional cap of 3. The mock handlers don't enforce the cap yet; the error appears there only when
+     forced with `?mock_error`.
    - **X3:** the response for an internal checkout-initialisation conflict, which isn't
-     `PAYMENT_PROVIDER_ERROR` (OD3 rule 7).
+     `PAYMENT_PROVIDER_ERROR` (OD3 rule 7). *Implemented:* `409 CHECKOUT_IN_PROGRESS`. The concurrency test
+     only allows it among the possible results; no test forces it deterministically. Whether it carries
+     `details.placement_id`, as proposed, hasn't been checked.
 
-## Readiness summary (sixth revision)
+## Readiness summary (sixth revision; reconciled 2026-10-25)
 
-Nothing in this list is complete just because the ADR text was amended.
+Nothing in this list is complete just because the ADR text was amended. Built and tested locally isn't the
+same as approved or verified at Paystack. The three are kept apart below.
 
-1. **Design decisions documented here** (proposed; not accepted):
+1. **Design decisions documented here** (proposed; not accepted; implemented in `9169985`):
    - the attempt states and transitions (AT1–AT19);
    - the refund states and transitions (RT1–RT13) and the recovery algorithm;
    - the invariants I1–I12;
    - the lock order and retry rules (section G);
    - the legacy mapping proposal (section H);
    - entry-point coverage (section E).
-2. **Owner decisions awaiting approval:** items 4–8 above (including contract questions X1–X3), plus Q5–Q7.
-3. **Paystack behaviour needing verification:**
+2. **Owner decisions awaiting approval:** items 5–8 above (the implementation review, acceptance, the #7d
+   proposals, and ratification of X1–X3), plus Q5–Q7. Item 4 is overtaken.
+3. **Paystack behaviour needing verification** (unchanged by the implementation; the code is built to stay
+   safe if any of these turns out differently, but that is untested in live mode):
    - live-mode duplicate-reference behaviour (O1);
    - live-mode duplicate-refund behaviour (O6);
    - refund-list matching fields, paging and filtering (O7, D13);
@@ -1474,53 +1518,103 @@ Nothing in this list is complete just because the ADR text was amended.
 
    Production billing stays blocked until these are confirmed, or their risk is explicitly accepted by the
    owner (`docs/owner-inputs.md` #13a).
-4. **Implementation requirements** (none built):
-   - the new states, `watch_until` and `attempt_no`;
-   - I2, I4 (with the cap), I7, I8's aggregate trigger, I9, I10, I11 and I12;
-   - `clock_timestamp()` in settlement and in the trigger;
-   - the T2 re-check;
-   - compare-and-set and bounded fresh-transaction retries;
-   - classification by `code`;
+4. **Implementation requirements:** *built in `9169985` and `a6f1a3a` (2026-10-19), local only, not signed
+   off:*
+   - the new states, `watch_until` and `attempt_no` (migration 0008);
+   - I2, I4 (with the cap as a `CHECK`, 1–3), I7, I9, I10 and I11 in the database. I12 is an application
+     rule in settlement;
+   - I8 as a **counter column** (`payments.refund_committed_kobo`) plus a `CHECK`, not the aggregate trigger
+     described in section D (see "Implementation status");
+   - `clock_timestamp()` in settlement (`PaymentRepository`) and in the placement transition trigger;
+   - the T2 re-check, compare-and-set, and bounded fresh-transaction retries;
+   - classification by Paystack `code`, including `transaction_not_found` and `reversal-pending`;
    - no locks across Paystack calls;
-   - `reconcile_checkouts`, `watch_checkouts` and the extended `refund_retry`;
+   - `reconcile_checkouts`, `watch_checkouts` and the extended `refund_retry` jobs;
    - `refund.*` webhook handling;
-   - admin alerts and the console alert list;
-   - `refund_status`;
-   - the legacy migration.
-5. **Tests required before release:** "Contract and test changes required", including the sixth-revision
-   additions, and the concurrency tests in `tests/concurrency/`. None has been written or run.
+   - admin alerts, plus the console alert list at `/admin/alerts`;
+   - `refund_status`, and the wire status `refund_pending` (X1);
+   - the legacy migration (section H's proposal, with unclear rows raised as `legacy_unresolved` alerts);
+   - automatic refund resubmission, built but **off** (`REFUND_AUTO_RESUBMIT=false`) until Q5 and #13a.
+5. **Tests:**
+   - *Written and run locally on disposable databases (2026-10-19):* API 553 passed, including
+     `test_checkout_recovery.py`, `test_refund_lifecycle.py`, `test_admin_alerts.py`,
+     `test_migration_0008.py` and `tests/concurrency/test_payment_races.py`. Web Vitest 512 passed.
+   - *Not yet done:*
+     - Playwright e2e. The last local run (2026-10-20) failed for an environment reason: `.env.local` had
+       mocking disabled. No run has passed since `a6f1a3a` or `57a2169`;
+     - no re-run of the API suite since the Bun switch (ADR 0018);
+     - mock enforcement of the attempt cap;
+     - a deterministic `CHECKOUT_IN_PROGRESS` test;
+     - web tests for the new error messages;
+     - CI on GitHub (the commits aren't pushed);
+     - Playwright against the real API (B7).
 
 ## Consequences
 
 - **Built behaviour change:** a second accept of the same proposal while it's unpaid returns 201 with the same
   placement (previously 409). `test_accept.py` was updated to match.
-- **Until the target is implemented,** the built code:
-  - holds a lock during the Paystack call;
-  - starts a trial for a payment that lands after `hold_expires_at` if `expire_holds` hasn't run yet
-    (`_settle` and `begin_trial_locked` check only the status);
-  - can lose a reference on an ambiguous timeout;
-  - can re-request a refund after a timeout;
-  - treats "refund requested" as refunded;
-  - alerts only through logs;
-  - can replay a dead link.
+- **Gaps in the 2026-10-15 code (`4f1b00b`), addressed by `9169985` and `a6f1a3a` on 2026-10-19:** that code
+  held a lock during the Paystack call. It could also:
+  - start a trial for a payment that landed after `hold_expires_at`;
+  - lose a reference on an ambiguous timeout;
+  - re-request a refund after a timeout;
+  - treat "refund requested" as refunded;
+  - alert only through logs;
+  - replay a dead link.
 
-  The web app and MSW also follow the old semantics.
+  The fixes are tested locally, not signed off, and not verified in live mode. The web app and MSW were
+  updated for `refund_pending`, `refund_status`, `HOLD_EXPIRED` and admin alerts. The MSW handlers don't
+  enforce the attempt cap.
+- **Built code isn't approved policy.** It uses provisional values the owner hasn't confirmed (#7d):
+  - the 3-attempt cap;
+  - the `clock_timestamp()` settlement rule;
+  - the 7-day watch window;
+  - the section I wording, marked `TODO(content)`;
+  - the legacy mapping.
+
+  It also uses wire values and error codes the owner hasn't ratified (X1–X3, #7e). The attempt cap is a
+  database `CHECK`, so changing it needs a migration.
 - **Exactly-once charging is not achievable with Paystack's documented capabilities.** The design guarantees at
   most one applied payment per placement and tracks every other one to a processed refund or an open alert.
-- **Migration 0007's downgrade** fails once any proposal has more than one placement. The target migration's
-  downgrade must map the new payment states back to the four old ones, and refuse if `payment_refunds` or
-  `admin_alerts` hold unresolved rows. The proposed forward mapping is in section H; it isn't final.
+- **Migration 0007's downgrade** fails once any proposal has more than one placement. Migration 0008's
+  downgrade is guarded: it refuses while `payment_refunds` or `admin_alerts` hold unresolved rows. 0008
+  applies section H's forward mapping, which the owner hasn't confirmed (#7d). 0008 hasn't been applied to the
+  project databases, only to disposable test databases.
 - **Not changed:** a Paystack refusal of the seeded `@demo.hv` emails (owner input #12).
 
-## Implementation status (2026-10-19, local commits on `feature/backend`, not pushed; ADR remains Proposed)
+## Implementation status (2026-10-19, reconciled 2026-10-25; local commits on `feature/backend`, not pushed; ADR remains Proposed)
 
-Built on `feature/backend` (local commits, not pushed) and tested on disposable databases only (`hv_adr0017_tests`, `hv_adr0017_scratch`); the project databases were not touched and nothing was seeded.
+Built in `9169985` (API) and `a6f1a3a` (web, mocks, contracts) on 2026-10-19, with e2e route coverage for
+`/admin/alerts` added in `57a2169` (2026-10-22). All are local commits on `feature/backend`, **not pushed**, and
+tested on disposable databases only (`hv_adr0017_tests`, `hv_adr0017_scratch`). The project databases weren't
+touched and nothing was seeded.
+
+**Authorisation record.** When these commits were made, this ADR's header said the design wasn't authorised
+for implementation. The commit message of `9169985` and `docs/CHANGELOG.md` said the owner authorised it on
+2026-10-19. That conflict is left as it was recorded. On **2026-10-25** the owner authorised retaining the
+implementation and continuing its review and completion, from that date onward. Not reverting the commits
+doesn't accept this ADR.
 
 - Migration `0008` (attempt states, `payment_refunds`, `admin_alerts`, counter-based I8 via `payments.refund_committed_kobo` + `CHECK`, placement transition trigger, legacy mapping with `legacy_unresolved` alerts, guarded downgrade).
-- Engineering resolutions of the contract questions: X1 wire status `refund_pending` plus `refund_status`; X2 `CHECKOUT_ATTEMPTS_EXHAUSTED` (409); X3 `CHECKOUT_IN_PROGRESS` (409).
+- Engineering resolutions of the contract questions, **implemented but awaiting the owner's formal ratification (#7e)**: X1 wire status `refund_pending` plus `refund_status`; X2 `CHECKOUT_ATTEMPTS_EXHAUSTED` (409); X3 `CHECKOUT_IN_PROGRESS` (409). `api-contracts.md`, the generated contracts, `error-messages.ts` and the mock error map were updated. The ADR 0009 amendment that the contract freeze requires hasn't been written.
 - I8 design changed from a trigger sum to a counter column: on PostgreSQL 16.15, sum-only triggers over-commit under REPEATABLE READ and lock-then-sum deadlocks without an application lock; the counter + `CHECK` was safe under both levels.
 - Fix found by the new concurrency tests: `SELECT ... FOR UPDATE` now always refreshes loaded ORM objects (`app/db/session.py`); without it a settlement that waited on a lock decided on stale state.
 - Additional test-mode observations: partial refunds can repeat until the total is reached; the refund-list `transaction` filter takes the numeric transaction ID; refunds below ₦50 are refused; `channels: ["card"]` is accepted.
 - Tests: API 553 passed / 0 failed / 0 skipped (`test_seed.py` excluded because it seeds with `reset=True`), plus new refund-lifecycle, admin-alert, migration-mapping and race tests; ruff and mypy clean. Contracts regenerated with `pnpm contracts:generate`.
 
-Still required before Accepted: owner decisions in owner-inputs #7d (settlement-time rule, attempt cap, partial/repeat refund policy, family and admin wording marked `TODO(content)`, legacy rows, resubmission gate) and the #13a live-mode verifications.
+**Implemented, policy still open (owner, #7d):** the settlement-time rule, the attempt cap of 3, the partial and repeat refund policy, the family and admin wording marked `TODO(content)`, the legacy mapping of ambiguous rows, and the resubmission gate (built, off).
+
+**Implemented, contract still unratified (owner, #7e):** X1–X3, above.
+
+**Unverified provider behaviour (#13a):** T2, T6's webhook bodies, T7, T8 on the hosted page, live-mode O1/O6/O7, refund-list paging and filtering, `paid_at` timing, the live refund lifecycle including `reversal-pending`, partial refunds in live mode, and the card-only configuration.
+
+**Engineering gaps (no owner decision needed):**
+- the ADR 0009 amendment for X1–X3, once they're ratified;
+- MSW enforcement of the attempt cap;
+- a deterministic `CHECKOUT_IN_PROGRESS` test, and a check of its `details`;
+- web tests for the three new messages;
+- a passing Playwright run with mocking forced on;
+- an API re-run after ADR 0018;
+- CI on GitHub after the owner authorises a push.
+
+**Still required before Accepted:** the owner's review of the implementation, the #7d decisions, ratification of X1–X3 (#7e), and the #13a live-mode verifications (or the owner's explicit acceptance of each risk).

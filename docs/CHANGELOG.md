@@ -1,8 +1,20 @@
 # Changelog
 
+## Documentation reconciliation — ADR 0017 status, push status (2026-10-25)
+
+**Status: documentation only, uncommitted.** No code, migrations, contracts, generated types, mocks or tests changed. Nothing was staged, committed, pushed or run against a database.
+
+- **Owner decision (2026-10-25):** retain the ADR 0017 implementation in `9169985` and `a6f1a3a`, and continue its review and completion. This applies from 2026-10-25 onward. The earlier entries are left as written, including the 2026-10-19 entry below and its statement about authorisation; ADR 0017's header said otherwise at the time. ADR 0017 stays **Proposed**.
+- `docs/decisions/0017-failed-checkout-recovery.md`:
+  - the header, decisions 5–6, the OD9 and test-mode headings, "Built today" (marked superseded) and "Target design" now say what's implemented;
+  - the owner-decision status, readiness summary, consequences and implementation status now separate three things: built code, open policy (#7d, #7e) and unverified Paystack behaviour (#13a).
+- `CLAUDE.md` "Current phase": ADR 0017 is implemented but not accepted; ADR 0018; the 8 local-only commits; the cause of the local e2e failure; and the revised B7 prerequisites.
+- `docs/owner-inputs.md`: #7, #7a, #7d, #7e (X1–X3 implemented, awaiting ratification) and #13a.
+- This file: the ADR 0018 entry wrongly said "pushed". It has been corrected.
+
 ## ADR 0018 — Bun replaces pnpm (2026-10-22)
 
-**Status: committed and pushed to `feature/backend` at the owner's request. CI on GitHub not yet confirmed green (#7).**
+**Status: committed to `feature/backend` (`8e4cc97`), local only. Not pushed:** GitHub's `feature/backend` is still at `4f1b00b` (checked with `git ls-remote` on 2026-10-25). It stays local until the owner authorises a push. *Corrected 2026-10-25: this line previously said "committed and pushed … at the owner's request", which was wrong.* CI on GitHub is not yet confirmed green (#7).
 
 1. **Objective:** finish the half-done switch from pnpm to Bun found in the working tree, with an ADR.
 2. **Files created:** `docs/decisions/0018-bun-package-manager.md`, `bun.lock` (migrated from `pnpm-lock.yaml`), `bunfig.toml`.
@@ -12,7 +24,7 @@
 6. **Known issues:** CI with Bun is unverified on GitHub.
 7. **Assumptions:** none beyond ADR 0018.
 8. **Acceptance:** reproducible install (met); web checks (met, except e2e not run); CI green (not verified).
-9. **Next step:** push, then check the GitHub Actions run (#7).
+9. **Next step:** once the owner authorises it, push, then check the GitHub Actions run (#7).
 
 Also in this push:
 - `bundle-budget.mts` was missing `/signup/google` (a form page since ADR 0016) from its form-page list, so CI's budget step would have failed with or without Bun. The route was added there and to `docs/bundles.md`.
