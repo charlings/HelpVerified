@@ -13,6 +13,9 @@
    - `vite` ^8.3.5 as a direct dev dependency: it arrives only as a peer (plugin-react, msw, vitest), which bun's `overrides` don't reach;
    - in-range refreshes: `vitest` 5.0.5, `msw` 3.0.3, `@vitejs/plugin-react` 6.1.2.
 4. **Checks run locally:** web lint, lint:css, typecheck, unit tests (51 files, 520 passed), build and bundle budgets passed; `bun audit` clean. Not run locally: Playwright e2e/a11y (blocked by `.env.local`, see CLAUDE.md) and Lighthouse; CI runs both. API untouched.
+5. **CI on `60db69c`** (run 41087480525, run twice): `security`, `api`, `contracts`, `a11y-audit`, and lint, CSS lint, typecheck and build all pass. Two failures surfaced that had been hidden behind the earlier ones:
+   - **Unit test** `admin-alerts.test.tsx` › "resolving needs a note and records it" failed both times. The dialog focuses the note in a `requestAnimationFrame` callback, and the test checked focus synchronously, which loses the race on the runner. It now waits (`await waitFor(...)`), as the repo's other focus tests do.
+   - **Lighthouse Home performance 88, then 87 (< 90)**; Services 96 and 98; accessibility and SEO 100. FCP and LCP 0.9 s and CLS 0.003 are fine. Total Blocking Time is 480–530 ms, all in Next/React framework chunks and inline scripts at hydration. The fonts and Home's first-load JS (109 kB, unchanged) aren't the cause. Home scored 90 on 15 Oct and 86–90 in M3. Owner decision: #7.
 
 ## Documentation reconciliation — ADR 0017 status, push status (2026-10-25)
 

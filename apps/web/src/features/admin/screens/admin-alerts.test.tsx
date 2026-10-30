@@ -55,7 +55,7 @@ describe("AdminAlertsScreen", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "Resolve" }));
     expect(await within(dialog).findByText("Say what you checked or did, so the next admin knows.")).toBeVisible();
-    expect(within(dialog).getByLabelText(/Resolution note/)).toHaveFocus();
+    await waitFor(() => expect(within(dialog).getByLabelText(/Resolution note/)).toHaveFocus());
 
     await user.type(within(dialog).getByLabelText(/Resolution note/), "Refund confirmed in the dashboard.");
     await user.click(within(dialog).getByRole("button", { name: "Resolve" }));
