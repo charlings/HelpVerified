@@ -1,5 +1,19 @@
 # Changelog
 
+## CI fixes after the first Bun run (owner #7, 2026-10-30)
+
+**Status: committed and pushed 2026-10-30 (owner's authorisation), on its own; the ADR 0017/0019 work in progress stays uncommitted. CI re-run pending.** `feature/backend` was pushed to `aa9ae44` (owner's authorisation) and CI run 41072395963 was red: `api`, `contracts` and `a11y-audit` passed; `web`, `lighthouse` and `security` failed. Fixed (owner's go-ahead):
+
+1. **`web` lint:** `@next/next/no-img-element` skips `opengraph-image` files on Linux but not on Windows (it replaces only the first `\`), so the inline disable in `src/app/opengraph-image.tsx` was "unused" in CI. The rule is now off for that file in `eslint.config.mjs` and the inline comment is gone; lint is the same on both.
+2. **`lighthouse` build:** `next/font/google` crashed (`TypeError … reading '1'` in its loader) when Google served font URLs without a file extension to the CI runner; it hit 2 of 3 runs. `src/app/fonts.ts` now uses `next/font/local` with the same latin variable `woff2` files Google serves (Plus Jakarta Sans 600–800, Inter 400–600), saved in `src/assets/fonts/` with their OFL licences. Same exports, CSS variables, `display: swap` and preload choices; the build makes no font request. `references/design-system.md` updated.
+3. **`security` audit (`bun audit --audit-level=high`):** 10 advisories (1 critical) → none.
+   - `next` and `eslint-config-next` 15.5.27 → 15.5.28 (critical image-optimisation RCE and a Server Actions DoS);
+   - `zod` ^4.6.7; `lighthouse` 13.6.0, whose `puppeteer-core` → `chromium-bidi` moves from zod 3 (no patched release) to zod 4;
+   - root `overrides`: `postcss` ^8.5.32 (Next still pins 8.4.31) and `undici` ^8.12.3 (via jsdom);
+   - `vite` ^8.3.5 as a direct dev dependency: it arrives only as a peer (plugin-react, msw, vitest), which bun's `overrides` don't reach;
+   - in-range refreshes: `vitest` 5.0.5, `msw` 3.0.3, `@vitejs/plugin-react` 6.1.2.
+4. **Checks run locally:** web lint, lint:css, typecheck, unit tests (51 files, 520 passed), build and bundle budgets passed; `bun audit` clean. Not run locally: Playwright e2e/a11y (blocked by `.env.local`, see CLAUDE.md) and Lighthouse; CI runs both. API untouched.
+
 ## Documentation reconciliation — ADR 0017 status, push status (2026-10-25)
 
 **Status: documentation only, uncommitted.** No code, migrations, contracts, generated types, mocks or tests changed. Nothing was staged, committed, pushed or run against a database.

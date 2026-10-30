@@ -115,9 +115,11 @@ const eslintConfig = [
     rules: { "no-restricted-syntax": "off", "no-restricted-imports": "off" },
   },
   {
-    // next/og renders without CSS, so the OG image mirrors token colours as literals.
+    // next/og renders without CSS, so the OG image mirrors token colours as literals, and it only supports <img>.
+    // no-img-element is off here, not inline: the rule skips OG files on Linux but not on Windows (it replaces
+    // only the first path separator), so an inline disable is "unused" in CI and needed locally.
     files: ["src/app/opengraph-image.tsx"],
-    rules: { "no-restricted-syntax": "off" },
+    rules: { "no-restricted-syntax": "off", "@next/next/no-img-element": "off" },
   },
 ];
 

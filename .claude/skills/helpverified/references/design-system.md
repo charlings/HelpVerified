@@ -81,7 +81,7 @@ Role aliases used by components (define in the same file): `--color-bg`, `--colo
 
 ## 3. Typography
 
-- Fonts loaded with `next/font/google` (`Plus_Jakarta_Sans` weights 600/700/800, `Inter` 400/500/600), `display: swap`, exposed as CSS variables.
+- Fonts self-hosted with `next/font/local` from `src/assets/fonts/` (the Google Fonts latin variable files: Plus Jakarta Sans 600–800, Inter 400–600; OFL licences alongside), `display: swap`, exposed as CSS variables. Not `next/font/google`: its build-time fetch broke CI builds (2026-10-30).
 - Headings: display font, `font-weight 700`, `line-height 1.1` (h1–h2) / `1.2` (h3–h4), `letter-spacing -0.02em` on ≥ 3xl.
 - Body: Inter 16px, `line-height 1.6`, colour slate-600; marketing paragraphs `max-width: 68ch`.
 - Hero h1: 5xl mobile → 6xl desktop. Section h2: 3xl → 4xl. Eyebrows: sm, 600, uppercase, `letter-spacing 0.08em`, blue-600.

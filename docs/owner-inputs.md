@@ -2,14 +2,16 @@
 
 Everything the build is waiting on from the owner: accounts, keys, prices and decisions. It's updated at the end of every milestone and reported with the milestone summary. Keys and secrets go into `apps/api/.env` (never into chat or git).
 
-Last updated: 2026-10-25 (documentation reconciliation; no code changed):
+Last updated: 2026-10-30: `feature/backend` pushed to `aa9ae44` (owner's authorisation) and #7 answered: CI is **red** (see #7); the three failures are fixed, committed and pushed on their own (re-run pending). The ADR 0017/0019 work in progress was not committed.
+
+Earlier, 2026-10-25 (documentation reconciliation; no code changed):
 - ADR 0017's target design is **implemented** in local commits `9169985` and `a6f1a3a` (2026-10-19), tested
   locally only, and not signed off. On 2026-10-25 the owner authorised **retaining** it and continuing its
   review and completion. The ADR stays **Proposed**.
 - X1–X3 (#7e) are **implemented but awaiting the owner's formal ratification**.
 - The policy values in the code are provisional until #7d.
-- 8 commits on `feature/backend` are local only (`origin` is at `4f1b00b`). A push needs the owner's
-  authorisation, and #7 can't be answered until then.
+- 8 commits on `feature/backend` were local only (`origin` was at `4f1b00b`). Pushed 2026-10-30 (by then 9,
+  to `aa9ae44`).
 
 Earlier (2026-10-19):
 - Pricing direction recorded in #2 and `docs/pricing.md` (proposed launch pricing; not configured or live).
@@ -20,7 +22,7 @@ Earlier (2026-10-19):
   the Phase 1 #14).
 - Before B7: #7 (CI, unverified), #7a, #7b (seeded demo emails) and #7c (pending agencies adding workers).
 - The Firestore mirror is off (`NOTIFICATIONS_MIRROR=none`).
-- #3 and #6b are still to be done in B7. #7 is unverified.
+- #3 and #6b are still to be done in B7. #7 was unverified at the time (answered 2026-10-30: red).
 
 Earlier (2026-10-13): B6 is code complete and committed, pending only #3's end-to-end test (#5 and #8a decided 2026-10-13). Firestore passed (#4 done). Brevo SMTP connectivity passed. The end-to-end email test is deferred to B7 (owner, 2026-10-13), so B6's email criterion stays "partly met" until then. Google sign-in is code complete (ADR 0016), pending #6's live checks.
 
@@ -44,7 +46,7 @@ B6 works without these: emails go to `apps/api/.outbox/`, the feed is served fro
 | # | What | Why | How |
 | --- | --- | --- | --- |
 | 6 | **Google sign-in: the live checks.** *Code complete (ADR 0016). The OAuth client is in `apps/api/.env`. (a) The credentials check passed on 2026-10-13. Still to do: (b) one real sign-in in the browser, which needs the web app connected to the API (B7)* | Confirms the client ID, secret and redirect URI work with Google | (a) `cd apps/api; uv run python -m scripts.google_live_check`, which should print "Client ID and secret: OK". In the console the client's authorised redirect URI must be exactly `http://localhost:8000/api/v1/auth/google/callback`, and your Gmail must be a test user on the consent screen. (b) At B7: sign in with Google with mocks off |
-| 7 | **CI result on GitHub** | CI has never been confirmed green; the Lighthouse score from Phase 1 is still unproven. *Since 2026-10-22 CI installs with Bun (ADR 0018), so the first run after that push also proves the new toolchain. The push hasn't happened yet: 8 commits (`ecc9047` to `8e4cc97`) are local only, and GitHub's `feature/backend` is still at `4f1b00b`* | First authorise the push. Then GitHub → Actions → the latest `feature/backend` run: is it green? If not, paste the failing step |
+| 7 | **CI result on GitHub** | *Answered 2026-10-30: **red** on `aa9ae44` (run 41072395963; the 13 and 15 Oct runs also failed). The Bun install step works in every job (ADR 0018). Passing: `api`, `contracts`, `a11y-audit` (51 passed). Failing: `web` at lint (unused `eslint-disable` directive, `apps/web/src/app/opengraph-image.tsx:29`; later steps skipped); `lighthouse` at `next build` (`next/font` Google loader `TypeError: Cannot read properties of null (reading '1')` in `src/app/fonts.ts`), so the Phase 1 Lighthouse score is still unproven; `security` at `bun audit --audit-level=high` (10 advisories: 1 critical and 1 high in `next@15.5.27`, plus postcss, undici, vite, zod). All three fixed on 2026-10-30 with the owner's go-ahead, committed and pushed (`docs/CHANGELOG.md`); the re-run's result is pending* | Confirm the re-run is green |
 | 7a | **ADR 0017: the remaining decisions.** *Design direction OD1–OD9 approved 2026-10-19. Implemented 2026-10-19 (`9169985`, `a6f1a3a`); owner authorised retaining it on 2026-10-25. The ADR is still Proposed, not accepted, and not signed off* | B7's flows depend on the final checkout, refund and replay semantics | Review the implementation (ADR 0017 "Implementation status"), decide #7d and #7e, then accept the ADR or ask for changes. The implementation slot is overtaken. T8 on the hosted page is still worth running (#13a) |
 | 7b | **Seeded demo emails** (see #12) | Paystack refuses `@demo.hv`, so seeded families can't reach checkout in B7's payment flows (`docs/swagger-test-plan.md`, known issue 1) | Decide #12 before B7 |
 | 7c | **Pending agencies adding workers** | A pending agency can add workers (`docs/swagger-test-plan.md`, known issue 4, WK7). Listing still needs an approved, subscribed agency, so rule 1 holds | Confirm whether that's intended, so B7's tests expect the right behaviour |

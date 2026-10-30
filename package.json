@@ -9,6 +9,10 @@
     "apps/*",
     "packages/*"
   ],
+  "overrides": {
+    "postcss": "^8.5.32",
+    "undici": "^8.12.3"
+  },
   "trustedDependencies": [
     "esbuild",
     "sharp",

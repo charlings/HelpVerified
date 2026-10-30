@@ -26,7 +26,6 @@ export default async function OpengraphImage() {
         padding: 72,
       }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element -- next/og only supports <img> */}
       <img src={logoSrc} alt="" width={555} height={120} />
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         <div style={{ fontSize: 64, fontWeight: 700, color: colors.navy, lineHeight: 1.1, maxWidth: 960 }}>
